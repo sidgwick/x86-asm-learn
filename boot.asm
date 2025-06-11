@@ -35,47 +35,36 @@ start:
     cmp cx, 103
     jle @f
 
+    ; 设置堆栈段的段基地址 (0x0000:0x0000)
+    ; 注意由于压栈的时候 SP 自减, 因此实际上栈底位置在 0x0FFFF
+    xor cx, cx
+    mov ss, cx
+    mov sp, cx
+
+
     ; 以下计算累加和的每个数位
-    mov cx, 5
-    add di, 8
-dight:
-    xor dx, dx
     mov bx, 10
+    xor cx, cx ; 将来作为 loop @a 的 counter
+@d:
+    inc cx
+    xor dx, dx
     div bx
-    mov bl, dl
-    mov bh, 0x07
-    add bl, 0x30
-    mov [es:di], bx
-    sub di, 2
-    loop dight
+    or dl, 0x30 ; ADD 0x30
+    push dx
+    cmp ax, 0
+    jne @d
 
 
-;
-;          xor cx,cx              ;设置堆栈段的段基地址
-;          mov ss,cx
-;          mov sp,cx
+    ; 以下显示各个数位
+@a:
+    pop dx
+    mov dh, 0x07
+    mov [es:di], dx
+    add di, 2
+    loop @a
 
-;          mov bx,10
-;          xor cx,cx
-;      @d:
-;          inc cx
-;          xor dx,dx
-;          div bx
-;          or dl,0x30
-;          push dx
-;          cmp ax,0
-;          jne @d
-
-;          ;以下显示各个数位
-;      @a:
-;          pop dx
-;          mov [es:di],dl
-;          inc di
-;          mov byte [es:di],0x07
-;          inc di
-;          loop @a
-
+    ; 死循环
     jmp near $
 
     times 510-($-$$) db 0
-    db 0x55,0xaa
+                     db 0x55,0xaa
