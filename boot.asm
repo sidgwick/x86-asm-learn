@@ -1,109 +1,60 @@
-; 第五章代码
+; 第六章代码
 
-    ; ES 段指向文本模式缓冲区
+    jmp near start
+
+mytext:
+    db 'L', 0x07, 'a', 0x07, 'b', 0x07, 'e', 0x07, 'l', 0x07, ' ', 0x07, 'o', 0x07, \
+            'f', 0x07, 'f', 0x07, 's', 0x07, 'e', 0x07, 't', 0x07, ':', 0x07
+
+number:
+    db 0,0,0,0,0
+
+start:
+    ; 设置数据段基地址(0x07c0:0x0000)
+    mov ax, 0x07c0
+    mov ds, ax
+
+    ; 设置附加段基地址(显示缓冲区)
     mov ax, 0xb800
     mov es, ax
 
-    ; CS 会被 BIOS 设置为 0x00, IP 被设置为 0x7c00
-    ; DS 设置为从 0x7c00 开始
-    mov ax, 0x7c00
-    mov ds, ax
+    ; movsb, movsw 用于从 DS:SI 往 ES:DI 搬数据
+    ; cld, std 用来指定 SI/DI 的方向, cld 之后 SI/DI 自增, std 之后自减
+    ; 不配合 rep 指令的时候, movsb/movsw 只执行一次, 配合 rep 使用, 可以执行 CX 次
+    cld
+    mov si, mytext
+    mov di, 0x00
+    mov cx, (number - mytext) / 2 ; = 13
+    rep movsw
 
-
-    ; 以下显示字符串"Label offset:"
-    mov byte [es:0x00], 'L'
-    mov byte [es:0x01], 0x07 ; 黑底白字
-    mov byte [es:0x02], 'a'
-    mov byte [es:0x03], 0x07
-    mov byte [es:0x04], 'b'
-    mov byte [es:0x05], 0x07
-    mov byte [es:0x06], 'e'
-    mov byte [es:0x07], 0x07
-    mov byte [es:0x08], 'l'
-    mov byte [es:0x09], 0x07
-    mov byte [es:0x0A], ' '
-    mov byte [es:0x0B], 0x07
-    mov byte [es:0x0C], 'o'
-    mov byte [es:0x0D], 0x07
-    mov byte [es:0x0E], 'f'
-    mov byte [es:0x0F], 0x07
-    mov byte [es:0x10], 'f'
-    mov byte [es:0x11], 0x07
-    mov byte [es:0x12], 's'
-    mov byte [es:0x13], 0x07
-    mov byte [es:0x14], 'e'
-    mov byte [es:0x15], 0x07
-    mov byte [es:0x16], 't'
-    mov byte [es:0x17], 0x07
-    mov byte [es:0x18], ':'
-    mov byte [es:0x19], 0x07
-
-    ; 取得标号number的偏移地址
+    ; 得到标号所代表的偏移地址, 接下来会在屏幕上显示这个数字
     mov ax, number
 
-    ; bx 存放的是除数
-    mov bx, 10
-
-    ; 求个位上的数字, DX 存放的是被除数高位, AX 存放的是被除数低位
-    mov dx, 0
-    div bx
-    mov [number + 0x00], dl ; 保存个位数字
-
-    ; 求十位数字, 第一次出发完成之后, DX 存放的是商, AX 是余数
+    ; 计算各个数位
+    mov bx, ax ; bx 现在记录的是 number 在段内偏移, 一会儿往这里写数据
+    mov cx, 5 ; 循环次数
+    mov si, 10 ; 除数
+digit:
     xor dx, dx
-    div bx
-    mov [number + 0x01], dl
+    div si
+    mov [bx], dl ; 保存计算结果(商)
+    inc bx
+    loop digit
 
-    ; 求百位数字
-    xor dx, dx
-    div bx
-    mov [number + 0x02], dl
+    ; 显示各个数位
+    mov bx, number
+    mov si, 4
+show:
+    mov al, [bx, si]
+    add al, 0x30 ; ASCII 码值
+    mov ah, 0x04 ; 显示属性
+    mov [es:di], ax
+    add di, 2
+    dec si
+    jns show
 
-    ; 求千位位数字
-    xor dx, dx
-    div bx
-    mov [number + 0x03], dl
+    mov word [es:di], 0x0744 ; 字符 'D', 黑底白字
+    jmp near $
 
-    ; 求万位位数字
-    xor dx, dx
-    div bx
-    mov [number + 0x04], dl
-
-    ; 现在显示计算好的数字到屏幕上
-    mov al, [number + 0x04]
-    add al, 0x30 ; 转换为 ASCII 码
-    mov [es:0x1a], al
-    mov byte [es:0x1b], 0x04 ; 黑底红字
-
-    mov al, [number + 0x03]
-    add al, 0x30 ; 转换为 ASCII 码
-    mov [es:0x1c], al
-    mov byte [es:0x1d], 0x04 ; 黑底红字
-
-    mov al, [number + 0x02]
-    add al, 0x30 ; 转换为 ASCII 码
-    mov [es:0x1e], al
-    mov byte [es:0x1f], 0x04 ; 黑底红字
-
-    mov al, [number + 0x01]
-    add al, 0x30 ; 转换为 ASCII 码
-    mov [es:0x20], al
-    mov byte [es:0x21], 0x04 ; 黑底红字
-
-    mov al, [number + 0x00]
-    add al, 0x30 ; 转换为 ASCII 码
-    mov [es:0x22], al
-    mov byte [es:0x23], 0x04 ; 黑底红字
-
-    mov byte [es:0x24], 'D'
-    mov byte [es:0x25], 0x07
-
-; 无限循环
-infi:
-    jmp near infi
-
-number:
-    db 0, 0, 0, 0, 0
-
-    times 202 db 0
-    db 0x55, 0xaa
+    times 510-($-$$) db 0
+    db 0x55,0xaa
