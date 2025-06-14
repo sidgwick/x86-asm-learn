@@ -1,95 +1,168 @@
-; 第七章代码
+; 第八章代码
 
-    jmp near start
+    ; 常数声明, 用户的应用程序保存在第 100 逻辑扇区开始的磁盘空间上
+    app_lba_start equ 100
 
-message:
-    db '1+2+3+...+13000='
+SECTION mbr align=16 vstart=0x7c00
 
-quotient_H:
-    dw 0x0000
+    ; 设置堆栈
+    mov ax, 0
+    mov ss, ax
+    mov sp, ax
 
-start:
-    ; 设置数据段的段基地址
-    mov ax, 0x07c0
+    ; 计算用户程序在内存中合适的段地址
+    ; 此时的用户程序相当于 MBR 程序的 `数据`, 因此设置 DS, ES 寄存器
+    mov ax, [cs:phy_base]
+    mov dx, [cs:phy_base+0x02]
+    mov bx, 16 ; 16 位对齐
+    div bx
     mov ds, ax
-
-    ; 设置附加段基址到显示缓冲区
-    mov ax, 0xb800
     mov es, ax
 
-    ; 以下显示字符串
-    mov si, message
-    mov di, 0x00
-    mov cx, quotient_H - message
-@g:
-    mov al, [si]
-    mov ah, 0x07
-    mov [es:di], ax
-    add si, 1
-    add di, 2
-    loop @g
+    ; 先读取程序的起始部分
+    ; DI:SI 里面保存的事需要读取的扇区号, DS:BX 是接受的内存缓冲区地址
+    xor di, di
+    mov si, app_lba_start
+    xor bx, bx
+    call read_hard_disk_0
 
-    ; 以下计算1到100的和
-    xor ax, ax
-    xor dx, dx
-    mov cx, 1
-@f:
-    add ax, cx ; ax 存放结果的低位
-    adc dx, 0 ; dx 存放结果的高位
-    inc cx
-    cmp cx, 13000
-    jle @f
+    ; 现在 DS:0x0000 里面有用户程序的前 512 字节内容
+    ; 用户程序的前面两个字节是程序的长度
+    mov dx, [0x02]
+    mov ax, [0x00]
+    mov bx, 512
+    div bx
 
-    ; 设置堆栈段的段基地址 (0x0000:0x0000)
-    ; 注意由于压栈的时候 SP 自减, 因此实际上栈底位置在 0x0FFFF
-    xor cx, cx
-    mov ss, cx
-    mov sp, cx
+    ; 除不尽, 扇区数量会比余数 ax 多出来 1 个扇区
+    ; 除得尽, 则扇区数量就是 ax 个, 但是现在赢读取了第一个扇区, 因此需要减一
+    cmp dx, 0
+    jnz @1
+    dec ax
+@1:
+    cmp ax, 0 ; 已经读完了
+    jz direct
+
+    ; 继续读取剩余的数据
+    push ds
+    mov cx, ax
+@2:
+    mov ax, ds
+    add ax, 0x20 ; DS + 512, 是下一个扇区要写入的内存位置
+    mov ds, ax
+
+    xor bx, bx
+    inc si
+    call read_hard_disk_0
+    loop @2
+
+    pop ds
+
+; 计算用户程序入口点代码段基址
+direct:
+    ; 注意应用程序中填写的段地址是一个 20 位地址
+    ; 这里处理完之后我们只要它的段地址, 因此后面只使用 [0x06]
+    mov dx, [0x08]
+    mov ax, [0x06]
+    call calc_segment_base
+    mov [0x06], ax
+
+    ; 开始处理段重定位表
+    mov cx, [0x0a] ; 需要重定位的项目数量
+    mov bx, 0x0c   ; 重定位表首地址
+realloc:
+    mov dx, [bx+0x02]
+    mov ax, [bx]
+    call calc_segment_base
+    mov [bx], ax
+    add bx, 4
+    loop realloc
+
+    ; 转移到用户程序
+    jmp far [0x04]
 
 
-    ; 以下计算累加和的每个数位
-    mov bx, 10
-    xor cx, cx ; 将来作为 loop @a 的 counter
-@d:
-    inc cx
-
-    ; 除法计算的时候, 如果出现商不能被 AX 容纳的情况, CPU 会触发溢出中断
-    ; 此时可以采用
-    ;   1. 先对被除数高位 DX 除一次, 得到高位部分 `商H` 和高位部分 `余数H`
-    ;   2. `商H` 可以认为是原始除法结果的商的高位部分
-    ;   3. `余数H` 此时再配合被除数的低位部分, 重新做除法运算, 得到第二部分的 `商L` 和 `余数L`
-    ;   4. 最终结果是 商 = `商H` 拼接上 `商L`, 余数就是最后的 `余数L`
-
-    push ax ; 先把 ax 入栈, 腾出地方计算被除数的高位部分
-    mov ax, dx
-    xor dx, dx
-    div bx ; 执行第一步除法, 执行完 AX 是 `商H`, DX 是 `余数H`
-
-    ; 将商的高位保存起来
-    mov [quotient_H], ax
-    pop ax
-    div bx ; 执行第二步除法, 执行完 AX 是 `商L`, DX 是 `余数L`
-
-    ; 转化为 ASCII 码, 压栈保存
-    or dl, 0x30 ; ADD 0x30
+; 从硬盘读取一个扇区
+;   DI:SI 是 LBA28 逻辑扇区号
+;   DS:BX 是接受内存缓冲区地址
+read_hard_disk_0:
+    push ax
+    push bx
+    push cx
     push dx
 
-    ; 恢复商的高位信息
-    mov dx, [quotient_H]
+    ; 读取一个扇区
+    mov al, 1
+    mov dx, 0x1f2
+    out dx, al
 
-    cmp ax, 0
-    jne @d
+    ; 要读取的扇区号 + 扇区号指定方式(LBA28) + 主盘模式
+    inc dx ; 0x1f3 -- LBA28 的 0-7 位
+    mov ax, si
+    out dx, al
 
-    ; 以下显示各个数位
-@a:
+    inc dx ; 0x1f4 -- LBA28 的 8-15 位
+    mov al, ah
+    out dx, al
+
+
+    inc dx ; 0x1f5 -- LBA28 的 16-23 位
+    mov ax, di
+    out dx, al
+
+    inc dx ; 0x1f6 -- LBA28 的 24-28 位, + LBA28 模式 + 主盘
+    mov al, 0xe0
+    or al, ah
+    out dx, al
+
+    ; 读取磁盘状态, 等待数据准备就绪
+    inc dx
+    mov al, 0x20
+    out dx, al
+.waits:
+    in al, dx
+    and al, 0x88
+    cmp al, 0x08
+    jnz .waits
+
+    ; 读取磁盘内容, 写到内存中
+    mov cx, 256
+    mov dx, 0x1f0
+.readw:
+    in ax, dx
+    mov [bx], ax
+    add bx, 2
+    loop .readw
+
     pop dx
-    mov dh, 0x07
-    mov [es:di], dx
-    add di, 2
-    loop @a
+    pop cx
+    pop bx
+    pop ax
 
-    ; 死循环
-    jmp near $
+    ret
+
+
+; 计算 20 位物理地址对应的 16 位段地址
+;   DX:AX = 32位物理地址
+;   AX = 16位段基地址
+calc_segment_base:
+    push dx
+
+    ; 用户程序提供的是编译时地址, 因此那些偏移都是相对于 0x00000 开始的
+    ; 这里必须要将它被加载的物理内存地址加上, 才好做后面的端地址计算
+    add ax, [cs:phy_base]
+    add dx, [cs:phy_base+0x02]
+
+    ; 下面没有用除法计算, 使用位移完成了计算
+    shr ax, 4
+    ror dx, 4
+    and dx, 0xf000 ; 只要 dx 里面原来的低 4 位
+    or ax, dx      ; shr 之后, ax 高 4 位现在是 0
+
+    pop dx
+    ret
+
+phy_base:
+    dd 0x10000 ; 用户程序在内存中的物理起始地址
 
     times 510-($-$$) db 0
-                     db 0x55,0xaa
+    db 0x55,0xaa
