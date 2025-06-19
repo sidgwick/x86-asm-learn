@@ -11,10 +11,5 @@ all:
 
 	bochs -debugger -f bochsrc.txt
 
-	# # 验证写入 (可选)
-	# fdisk -lu a.img       # 查看分区表
-	# hexdump -C -s 0 a.img # 查看MBR内容
-	# hexdump -C -s $((512 * 100)) a.img  # 查看LBA100内容
-
 clean:
-	rm boot user *.lst
+	rm a.img boot user *.lst
