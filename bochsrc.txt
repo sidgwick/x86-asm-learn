@@ -6,6 +6,9 @@ display_library: sdl2
 romimage: file=$BXSHARE/BIOS-bochs-latest, options=fastboot
 vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest.bin
 
+# RTC
+clock: sync=realtime, rtc_sync=1, time0=local
+
 # 硬盘启动
 boot: disk
 ata0-master: type=disk, mode=flat, path="a.img"
