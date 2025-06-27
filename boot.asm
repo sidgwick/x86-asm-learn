@@ -1,168 +1,117 @@
-; 第八章代码
+; 第十一章
 
-    ; 常数声明, 用户的应用程序保存在第 100 逻辑扇区开始的磁盘空间上
-    app_lba_start equ 100
+; 下面这两个宏定义用来生成描述符
+%define descriptor_h(base, _offset, g_db_l_avl, p_dpl_s_type) ( \
+    (base        & 0xFF000000) | ((base        & 0x00FF0000) >> 16)  | (_offset & 0x00F0000) | \
+    ((g_db_l_avl & 0x0F) << 20) | ((p_dpl_s_type & 0xFF) <<8) \
+)
+%define descriptor_l(base, _offset) (((base & 0xFFFF) << 16) | _offset & 0xFFFF)
 
-SECTION mbr align=16 vstart=0x7c00
+        ; 设置堆栈段和栈指针
+        mov ax, cs
+        mov ss, ax
+        mov sp, 0x7c00
 
-    ; 设置堆栈
-    mov ax, 0
-    mov ss, ax
-    mov sp, ax
+        ; 准备操作 GDT, 因此要先算清楚它所在的 `段:偏移` 地址
+        mov ax, [cs:gdt_base+0x7c00]
+        mov dx, [cs:gdt_base+0x7c00+0x02]
+        mov bx, 16
+        div bx
+        mov ds, ax                        ; 商是段地址
+        mov bx, dx                        ; 余数是偏移地址
 
-    ; 计算用户程序在内存中合适的段地址
-    ; 此时的用户程序相当于 MBR 程序的 `数据`, 因此设置 DS, ES 寄存器
-    mov ax, [cs:phy_base]
-    mov dx, [cs:phy_base+0x02]
-    mov bx, 16 ; 16 位对齐
-    div bx
-    mov ds, ax
-    mov es, ax
+        ; 处理器要求 #0 描述符必须是空描述符
+        mov dword [bx+0x00], 0x00000000
+        mov dword [bx+0x04], 0x00000000
 
-    ; 先读取程序的起始部分
-    ; DI:SI 里面保存的事需要读取的扇区号, DS:BX 是接受的内存缓冲区地址
-    xor di, di
-    mov si, app_lba_start
-    xor bx, bx
-    call read_hard_disk_0
+        ; #1 描述符 - MBR 代码段
+        mov dword [bx+0x08], descriptor_l(0x7C00, 0x1FF)
+        mov dword [bx+0x0C], descriptor_h(0x7C00, 0x1FF, 0100B, 1001_1000B)
 
-    ; 现在 DS:0x0000 里面有用户程序的前 512 字节内容
-    ; 用户程序的前面两个字节是程序的长度
-    mov dx, [0x02]
-    mov ax, [0x00]
-    mov bx, 512
-    div bx
+        ; #2 描述符 - 显示缓冲区
+        mov dword [bx+0x10], descriptor_l(0xB8000, 0xFFFF)
+        mov dword [bx+0x14], descriptor_h(0xB8000, 0xFFFF, 0100B, 1001_0010B)
 
-    ; 除不尽, 扇区数量会比余数 ax 多出来 1 个扇区
-    ; 除得尽, 则扇区数量就是 ax 个, 但是现在赢读取了第一个扇区, 因此需要减一
-    cmp dx, 0
-    jnz @1
-    dec ax
-@1:
-    cmp ax, 0 ; 已经读完了
-    jz direct
+        ; #3 描述符 - 栈
+        mov dword [bx+0x18], descriptor_l(0x0000, 0x7A00)
+        mov dword [bx+0x1C], descriptor_h(0x0000, 0x7A00, 0100B, 1001_0110B)
 
-    ; 继续读取剩余的数据
-    push ds
-    mov cx, ax
-@2:
-    mov ax, ds
-    add ax, 0x20 ; DS + 512, 是下一个扇区要写入的内存位置
-    mov ds, ax
+        ; #4 描述符 - 代码段当数据段用
+        mov dword [bx+0x20], descriptor_l(0x7C00, 0x1FF)
+        mov dword [bx+0x24], descriptor_h(0x7C00, 0x1FF, 0100B, 1001_0010B)
 
-    xor bx, bx
-    inc si
-    call read_hard_disk_0
-    loop @2
+        ; 初始化 GDTR 寄存器
+        mov  word [cs:gdt_size+0x7c00], 39 ; 目前有 5 个段 x 8 byte = 共计 40 byte
+        lgdt [cs: gdt_size+0x7c00]
 
-    pop ds
+        ; 打开 A20 地址线
+        in  al,   0x92       ; 南桥芯片内控制复位和 A20 的端口
+        or  al,   0000_0010B
+        out 0x92, al
 
-; 计算用户程序入口点代码段基址
-direct:
-    ; 注意应用程序中填写的段地址是一个 20 位地址
-    ; 这里处理完之后我们只要它的段地址, 因此后面只使用 [0x06]
-    mov dx, [0x08]
-    mov ax, [0x06]
-    call calc_segment_base
-    mov [0x06], ax
+        cli ; 清中断
 
-    ; 开始处理段重定位表
-    mov cx, [0x0a] ; 需要重定位的项目数量
-    mov bx, 0x0c   ; 重定位表首地址
-realloc:
-    mov dx, [bx+0x02]
-    mov ax, [bx]
-    call calc_segment_base
-    mov [bx], ax
-    add bx, 4
-    loop realloc
+        ; 设置 CR0, 准备进入保护模式
+        mov eax, cr0
+        or  eax, 0x00000001 ; PE 置位
+        mov cr0, eax
 
-    ; 转移到用户程序
-    jmp far [0x04]
+        ; 已经进入保护模式
+        ; 使用远跳转, 调到 32 位模式代码执行
+        jmp dword 0x0008:flush
 
+[bits 32]
 
-; 从硬盘读取一个扇区
-;   DI:SI 是 LBA28 逻辑扇区号
-;   DS:BX 是接受内存缓冲区地址
-read_hard_disk_0:
-    push ax
-    push bx
-    push cx
-    push dx
+flush:
+        ; auto debug breakpoint
+        xchg bx, bx
 
-    ; 读取一个扇区
-    mov al, 1
-    mov dx, 0x1f2
-    out dx, al
+        ; 按照保护模式加载 DS 段描述符
+        ; base=0xb800, limit=0xffff
+        mov cx, 10_0_00B ; GDT, idx=2, rpl=0
+        mov ds, cx
 
-    ; 要读取的扇区号 + 扇区号指定方式(LBA28) + 主盘模式
-    inc dx ; 0x1f3 -- LBA28 的 0-7 位
-    mov ax, si
-    out dx, al
+        ; 按照保护模式加载 ES 段描述符
+        ; base=0xb800, limit=0xffff
+        mov cx, 100_0_00B ; GDT, idx=4, rpl=0
+        mov es, cx
 
-    inc dx ; 0x1f4 -- LBA28 的 8-15 位
-    mov al, ah
-    out dx, al
+        ; 以下在屏幕上显示"Protect mode OK."
+        xor ecx, ecx
+        mov ebx, msg
+        mov ah,  0x07
+    .print:
+        mov al,         [es:ebx]
+        mov word [ecx], ax
+        inc ebx
+        add ecx,        2
+        cmp al,         0
+        jnz .print
 
+        ;以下用简单的示例来帮助阐述32位保护模式下的堆栈操作
+        mov cx,  00000000000_11_000B ;加载堆栈段选择子，描述符索引号是 3
+        mov ss,  cx                  ;线性基址 0x000b8000,段界限是 0x0ffff
+        mov esp, 0x7c00
 
-    inc dx ; 0x1f5 -- LBA28 的 16-23 位
-    mov ax, di
-    out dx, al
+        mov  ebp, esp ;保存堆栈指针
+        push byte '.' ;压入立即数（字节）
 
-    inc dx ; 0x1f6 -- LBA28 的 24-28 位, + LBA28 模式 + 主盘
-    mov al, 0xe0
-    or al, ah
-    out dx, al
+        sub ebp,    4
+        cmp ebp,    esp ;判断压入立即数时，ESP是否减4
+        jnz ghalt
+        pop eax
+        mov [0x20], al  ;显示句点
 
-    ; 读取磁盘状态, 等待数据准备就绪
-    inc dx
-    mov al, 0x20
-    out dx, al
-.waits:
-    in al, dx
-    and al, 0x88
-    cmp al, 0x08
-    jnz .waits
-
-    ; 读取磁盘内容, 写到内存中
-    mov cx, 256
-    mov dx, 0x1f0
-.readw:
-    in ax, dx
-    mov [bx], ax
-    add bx, 2
-    loop .readw
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-
-    ret
+        ghalt:
+        hlt ;已经禁止中断，将不会被唤醒
 
 
-; 计算 20 位物理地址对应的 16 位段地址
-;   DX:AX = 32位物理地址
-;   AX = 16位段基地址
-calc_segment_base:
-    push dx
+; ;-------------------------------------------------------------------------------
 
-    ; 用户程序提供的是编译时地址, 因此那些偏移都是相对于 0x00000 开始的
-    ; 这里必须要将它被加载的物理内存地址加上, 才好做后面的端地址计算
-    add ax, [cs:phy_base]
-    add dx, [cs:phy_base+0x02]
+msg:      db "Protecte mode OK", 0
 
-    ; 下面没有用除法计算, 使用位移完成了计算
-    shr ax, 4
-    ror dx, 4
-    and dx, 0xf000 ; 只要 dx 里面原来的低 4 位
-    or ax, dx      ; shr 之后, ax 高 4 位现在是 0
+gdt_size: dw 0
+gdt_base: dd 0x00007e00            ; GDT 的物理地址
 
-    pop dx
-    ret
-
-phy_base:
-    dd 0x10000 ; 用户程序在内存中的物理起始地址
-
-    times 510-($-$$) db 0
-    db 0x55,0xaa
+        times 510-($-$$) db 0
+        db                  0x55,0xaa
