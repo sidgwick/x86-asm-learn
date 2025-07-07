@@ -99,6 +99,9 @@ class SegmentDescriptorParser:
             min_offset = 0
             max_offset = real_limit
 
+        min_offset = 0xFFFFFFFF & min_offset
+        max_offset = 0xFFFFFFFF & max_offset
+
         return min_offset, max_offset
 
     def get_linear_address_range(self):
@@ -107,8 +110,8 @@ class SegmentDescriptorParser:
         仅对有效的栈段返回有意义结果
         """
         min_offset, max_offset = self.get_valid_offset_range()
-        min_address = self.base + min_offset
-        max_address = self.base + max_offset
+        min_address = 0xFFFFFFFF & (self.base + min_offset)
+        max_address = 0xFFFFFFFF & (self.base + max_offset)
 
         return min_address, max_address
 
@@ -177,6 +180,7 @@ class SegmentDescriptorParser:
                 ),
             ])
 
+        output.append("---" * 10)
         return "\n".join(output)
 
 
@@ -189,17 +193,22 @@ def hex_number_to_bytes(low, high):
 
 # ==================== 使用示例 ====================
 if __name__ == "__main__":
+    code_desc = hex_number_to_bytes(0x0000FFFF, 0x00CF9200)
+    parser = SegmentDescriptorParser(code_desc)
+    print("1# 描述符，这是一个数据段，对应0~4GB的线性地址空间")
+    print(parser)
+
     code_desc = hex_number_to_bytes(0x7C0001FF, 0x00409800)
     parser = SegmentDescriptorParser(code_desc)
-    print("1# 描述符")
+    print("2# 保护模式下初始代码段描述符, 粒度为1个字节, 基地址为0x00007c00，512字节")
     print(parser)
 
-    code_desc = hex_number_to_bytes(0x8000FFFF, 0x0040920B)
+    code_desc = hex_number_to_bytes(0x7C0001FF, 0x00409200)
     parser = SegmentDescriptorParser(code_desc)
-    print("2# 描述符")
+    print("3# 代码段的别名描述符(数据段), 粒度为1个字节, 基地址为0x00007c00，512字节")
     print(parser)
 
-    code_desc = hex_number_to_bytes(0x00007A00, 0x00409600)
+    code_desc = hex_number_to_bytes(0x7C00FFFE, 0x00CF9600)
     parser = SegmentDescriptorParser(code_desc)
-    print("3# 描述符")
+    print("4# 基地址为0x00007c00，界限为0xffffe, 粒度为4KB，向下扩展")
     print(parser)
