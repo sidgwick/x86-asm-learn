@@ -7,16 +7,18 @@
 )
 %define descriptor_l(base, _offset) (((base & 0xFFFF) << 16) | _offset & 0xFFFF)
 
+section mbr vstart=0x7c00
+
         ;设置堆栈段和栈指针
         mov eax, cs
         mov ss,  eax
         mov sp,  0x7c00
 
         ;计算GDT所在的逻辑段地址
-        mov eax, [cs:pgdt+0x7c00+0x02] ;GDT的32位线性基地址
+        mov eax, [cs:pgdt+0x02] ;GDT的32位线性基地址
         xor edx, edx
         mov ebx, 16
-        div ebx                        ;分解成16位逻辑地址
+        div ebx                 ;分解成16位逻辑地址
 
         mov ds,  eax ;令DS指向该段以进行操作
         mov ebx, edx ;段内起始偏移地址
@@ -41,9 +43,9 @@
         mov dword [ebx+0x24], 0x00cf9600 ;粒度为4KB，向下扩展
 
         ;初始化描述符表寄存器GDTR
-        mov word [cs: pgdt+0x7c00], 39 ;描述符表的界限
+        mov word [cs: pgdt], 39 ;描述符表的界限
 
-        lgdt [cs: pgdt+0x7c00]
+        lgdt [cs: pgdt]
 
         in  al,   0x92       ;南桥芯片内的端口
         or  al,   0000_0010B
@@ -56,7 +58,7 @@
         mov cr0, eax ;设置PE位
 
         ;以下进入保护模式... ...
-        jmp 0x0010:dword flush ;16位的描述符选择子：32位偏移
+        jmp 0x0010:dword (flush - 0x7c00) ;16位的描述符选择子：32位偏移
 
         [bits 32]
     flush:
@@ -83,11 +85,11 @@
         push ecx    ;32位模式下的loop使用ecx
         xor  bx, bx ;32位模式下，偏移量可以是16位，也可以
     @@2: ;是后面的32位
-        mov  ax,          [string+bx]
-        cmp  ah,          al          ;ah中存放的是源字的高字节
+        mov  ax,                 [string-0x7c00+bx]
+        cmp  ah,                 al                 ;ah中存放的是源字的高字节
         jge  @@3
-        xchg al,          ah
-        mov  [string+bx], ax
+        xchg al,                 ah
+        mov  [string-0x7c00+bx], ax
     @@3:
         inc  bx
         loop @@2
@@ -98,8 +100,8 @@
         xor ebx, ebx         ;偏移地址是32位的情况
     @@4: ;32位的偏移具有更大的灵活性
         mov  ah,                 0x07
-        mov  al,                 [string+ebx]
-        mov  [es:0xb80a0+ebx*2], ax           ;演示0~4GB寻址。
+        mov  al,                 [string-0x7c00+ebx]
+        mov  [es:0xb80a0+ebx*2], ax                  ;演示0~4GB寻址。
         inc  ebx
         loop @@4
 

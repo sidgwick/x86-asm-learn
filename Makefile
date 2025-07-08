@@ -11,5 +11,12 @@ all:
 
 	bochs -debugger -f bochsrc.txt
 
+learn:
+	nasm -f bin -o boot -l boot.lst boot.asm
+	nasm -f bin -o boot1 -l boot1.lst boot1.asm
+
+	ndisasm -b 16 boot > a.txt
+	ndisasm -b 16 boot1 > b.txt
+
 clean:
 	rm a.img boot user *.lst
