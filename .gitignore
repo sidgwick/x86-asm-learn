@@ -1,9 +1,10 @@
 .DS_Store
 a.img
 *.lst
+*.bin
 bochsout.txt
-boot
-user
 copy.txt
 x86pkg2.rar
 x86pkg2/
+X86-Code
+snapshot.txt

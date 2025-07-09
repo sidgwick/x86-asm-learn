@@ -1,6 +1,7 @@
 ; 第 13 章
 ; 硬盘主引导扇区代码
 
+
 ; 下面这两个宏定义用来生成描述符
 %define descriptor_h(base, _offset, g_db_l_avl, p_dpl_s_type) ( \
     (base        & 0xFF000000) | ((base        & 0x00FF0000) >> 16)  | (_offset & 0x00F0000) | \
@@ -10,7 +11,6 @@
 
         core_base_address equ 0x00040000 ; 常数, 内核加载的起始内存地址
         core_start_sector equ 0x00000001 ; 常数, 内核的起始逻辑扇区号
-
 
         ; 设置堆栈段和栈指针
         mov ax, cs
@@ -43,15 +43,15 @@
         mov dword [ebx+0x1C], descriptor_h(0x7c00, 0xFFFFE, 1100B, 1001_0110B)
 
         ; 4# 显示缓冲区 - 描述符, 数据段, 读写, 1B 粒度
-        mov dword [ebx+0x18], descriptor_l(0xb8000, 0x7FFF)
-        mov dword [ebx+0x1C], descriptor_h(0xb8000, 0x7FFF, 0100B, 1001_0010B)
+        mov dword [ebx+0x20], descriptor_l(0xb8000, 0x7FFF)
+        mov dword [ebx+0x24], descriptor_h(0xb8000, 0x7FFF, 0100B, 1001_0010B)
 
         ; GDT 的长度 = (5 * 8) - 1
         mov word [cs:pgdt+0x7c00], 39
 
         ; 初始化描述符表寄存器 GDTR
         lgdt [cs:pgdt+0x7c00]
-        
+
         ; 打开 A20 地址线
         in  al,   0x92
         or  al,   0000_0010B
@@ -62,7 +62,7 @@
 
         ; 打开 PE 标志
         mov eax, cr0
-        or  cr0, 0x1
+        or  eax, 0x1
         mov cr0, eax
 
         ; 进入保护模式
@@ -128,7 +128,7 @@
 
         ; 建立核心数据段描述符
         mov  eax, [edi+0x08]     ; 核心数据段起始汇编地址
-        mov  ebx, [edi+0x0c]     ; 核心代码段汇编地址 
+        mov  ebx, [edi+0x0c]     ; 核心代码段汇编地址
         sub  ebx, eax
         dec  ebx                 ; 核心数据段界限
         add  eax, edi            ; 核心数据段基地址
@@ -138,7 +138,7 @@
         ; 6#, 安装描述符
         mov [esi+0x30], eax
         mov [esi+0x34], edx
-    
+
         ; 建立核心代码段描述符
         mov  eax, [edi+0x0c]     ; 核心代码段起始汇编地址
         mov  ebx, [edi+0x00]     ; 程序总长度
@@ -154,7 +154,7 @@
 
         ; 描述符表的界限 = 8*8 - 1
         mov word [pgdt+0x7c00], 63
-                                        
+
         lgdt [pgdt+0x7c00]
 
         jmp far [edi+0x10]
@@ -209,14 +209,14 @@ read_hard_disk_0:
         inc dx
         mov al, 0x20
         out dx, al
-    
+
         ; 接下来等待读取完成
     .waits:
         in  al, dx
         and al, 0x88 ; 1000_1000B, bit(3)=1 表示硬盘已经准备好和内存交换数据, bit(7)=1 表示硬盘忙
         cmp al, 0x08
         jnz .waits   ; 不忙(bit7), 且硬盘已准备好数据传输(bit3)
-        
+
         ; 0x1f0 端口, 正式读取硬盘数据
         mov dx,  0x1f0
         mov ecx, 256   ; 准备读取 256 字节
@@ -263,6 +263,6 @@ make_gdt_descriptor:
 ;-------------------------------------------------------------------------------
         pgdt dw 0
              dd 0x00007e00 ; GDT 的物理地址
-;-------------------------------------------------------------------------------                             
+;-------------------------------------------------------------------------------
          times 510-($-$$) db 0
                           db 0x55,0xaa

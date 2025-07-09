@@ -1,139 +1,86 @@
-; 第8章 - 用户程序
+        ; 第十三章 用户程序
 
-; ===============================================================================
-; 头部段, 定义了程序的长度, 程序的入口, 以及各个段的定位信息
-SECTION header align=16 vstart=0
+;===============================================================================
+SECTION header vstart=0
 
-    program_leght: dd program_end ; [0x00] - 程序长度
+        program_length dd program_end ; 程序总长度 #0x00
 
-    code_entry:
-        dw start              ; [0x04] - 入口点偏移地址
-        dd section.code.start ; [0x06] - 入口点所在的段地址
+        head_len dd header_end ; 程序头部的长度 #0x04
 
-    realloc_tbl_len: dw (header_end - code_segment) / 4 ; [0x0a] - 段重定位表项个数
+        stack_seg dd 0 ; 用于接收堆栈段选择子 #0x08
+        stack_len dd 1 ; 程序建议的堆栈大小 #0x0c, 以 4KB 为单位
 
-    ; [0x0a] - 段重定位表
-    code_segment:  dd section.code.start
-    data_segment:  dd section.data.start
-    stack_segment: dd section.stack.start
+        prgentry dd start              ; 程序入口 #0x10
+        code_seg dd section.code.start ; 代码段位置 #0x14
+        code_len dd code_end           ; 代码段长度 #0x18
+
+        data_seg dd section.data.start ; 数据段位置 #0x1c
+        data_len dd data_end           ; 数据段长度 #0x20
+
+;-------------------------------------------------------------------------------
+        ; 符号地址检索表
+        salt_items dd (header_end-salt)/256 ; #0x24
+
+        salt: ; #0x28
+        PrintString db '@PrintString'
+                    times 256-($-PrintString) db 0
+
+        TerminateProgram db '@TerminateProgram'
+                    times 256-($-TerminateProgram) db 0
+
+        ReadDiskData db '@ReadDiskData'
+                    times 256-($-ReadDiskData) db 0
 
 header_end:
 
-; ===============================================================================
-; 代码段 1
-SECTION code align=16 vstart=0
+;===============================================================================
+SECTION data vstart=0
 
-putc:
-    push ax
+        ; 缓冲区
+        buffer times 1024 db  0
 
-    ; AH=0E, 电传打字机输出
-    ;   AL=字符，BH=页码，BL=颜色
-    mov ah, 0x0e ;
-    mov al, cl
-    int 0x10
+        message_1 db 0x0d, 0x0a, 0x0d, 0x0a
+                db '**********User program is runing**********'
+                db 0x0d, 0x0a, 0
 
-    pop ax
-    ret
+        message_2 db '  Disk data:', 0x0d, 0x0a, 0
 
-put_string:
-   .w1:
-    mov  cl, [bx]
-    call putc
-    inc  bx
-    or   cl, cl
-    jnz  .w1
+data_end:
 
-    ret
-
-
-; -----------------------------------
-; 清空屏幕
-clear_screen:
-    push bx
-    push cx
-    push dx
-
-    xor bx, bx
-    mov cl, ' '
-  .w0:
-    call putc
-    inc  bx
-    cmp  bx, 2000
-    jl   .w0
-
-    ; AH=02H 设置光标
-    ;   BH=页码，DH=行，DL=列
-    mov bh, 0
-    mov ah, 0x02
-    xor dx, dx
-    int 0x10
-
-    pop dx
-    pop cx
-    pop bx
-
-    ret
-
-
+;===============================================================================
+        [bits 32]
+;===============================================================================
+SECTION code vstart=0
 start:
-    ; 加载器交出控制权的时候, DS, ES 都指向的是 header 段
-    ; 程序上来先设置好自己的栈段
-    mov ax, [stack_segment]
-    mov ss, ax
-    mov sp, stack_end
+        mov eax, ds
+        mov fs,  eax
 
-    mov ax, [data_segment]
-    mov ds, ax
+        mov eax, [stack_seg]
+        mov ss,  eax
+        mov esp, 0
 
-    call clear_screen
+        mov eax, [data_seg]
+        mov ds,  eax
 
-    mov  cl, 'D'
-    call putc
+        mov  ebx, message_1
+        call far [fs:PrintString]
 
-    mov  bx, msg0
-    call put_string
+        mov  eax, 100              ;逻辑扇区号100
+        mov  ebx, buffer           ;缓冲区偏移地址
+        call far [fs:ReadDiskData] ;段间调用
 
-    ; 从键盘缓冲区中读取一个键盘输入
-.reps:
-    mov ah, 0x00
-    int 0x16
+        mov  ebx, message_2
+        call far [fs:PrintString]
 
-; AH[1] = Scan code of the key pressed down
-; AL = ASCII character of the button pressed
+        mov  ebx, buffer
+        call far [fs:PrintString] ; too
 
-    mov  cl, al
-    call putc
+        ; 将控制权返回到系统
+        jmp far [fs:TerminateProgram]
 
-    ; mov ah, 0x0e
-    ; mov bl, 0x07
-    ; int 0x10
+code_end:
 
-    jmp .reps
-
-.idle:
-    hlt       ; 使 CPU 进入低功耗状态, 直到用中断唤醒
-    jmp .idle
-
-
-; ===============================================================================
-SECTION data align=16 vstart=0
-
-msg0:
-    db '  The above contents is written by LeeChung. ', 0x0d, 0x0a
-    db '2011-05-06', 0x0d, 0x0a
-    db 'Have a nice day!!!'
-    db 0
-
-; ===============================================================================
-; 栈段
-SECTION stack align=16 vstart=0
-
-    resb 256
-stack_end:
-
-
-; ===============================================================================
-; 程序末尾
-SECTION tail align=16
-
+;===============================================================================
+SECTION trail
+;-------------------------------------------------------------------------------
 program_end:

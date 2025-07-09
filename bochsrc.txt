@@ -28,5 +28,5 @@ mouse: enabled=0
 keyboard: keymap=#$BXSHARE/keymaps/x11-pc-us.map
 
 # 内存容量
-megs: 1
+megs: 128
 
