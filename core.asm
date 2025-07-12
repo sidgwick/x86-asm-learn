@@ -133,8 +133,19 @@ put_char:
 
         mov bx, 1920
 
-        ; 设置光标
     .set_cursor:
+        call set_cursor
+
+        popad
+        ret ; 段内返回
+
+; -------------------------------------------------------------------------------
+; 设置光标
+;   输入: BX = 光标位置
+set_cursor:
+        push edx
+        push eax
+
         mov dx, 0x3d4
         mov al, 0x0e
         out dx, al
@@ -149,8 +160,40 @@ put_char:
         mov al, bl
         out dx, al   ; 写高字节
 
-        popad
+        pop eax
+        pop edx
+
         ret ; 段内返回
+
+; -------------------------------------------------------------------------------
+; 清屏, 并把光标移动到开始位置
+clear_screen:
+        push ecx
+        push eax
+        push ebx
+        push ds
+
+        mov eax, video_ram_seg_sel
+        mov ds,  eax
+
+        ; 屏幕上输出 2000 个空格, 就是清屏了
+        mov ecx, 2000
+        mov ebx, 0
+    .cb1:
+        mov  word [ebx], 0x0720
+        add  ebx,        2
+        loop .cb1
+
+        ; 光标设置到 (0,0) 位置
+        mov  bx, 0
+        call set_cursor
+
+        pop ds
+        pop ebx
+        pop eax
+        pop ecx
+
+        retf
 
 ; -------------------------------------------------------------------------------
 ; 从硬盘读取一个逻辑扇区
@@ -659,12 +702,12 @@ load_relocate_program:
 ;-------------------------------------------------------------------------------
 ; 系统入口
 start:
+        ; clear screen
+        call sys_routine_seg_sel:clear_screen
+
         ; 使 ds 指向核心数据段
         mov ecx, core_data_seg_sel
         mov ds,  ecx
-
-        ; clear screen
-        ; TODO
 
         mov  ebx, message_1
         call sys_routine_seg_sel:put_string
