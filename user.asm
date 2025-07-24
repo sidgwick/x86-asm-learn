@@ -1,14 +1,16 @@
-        ; 第十三章 用户程序
+        ;代码清单15-2
+        ;文件名：c15.asm
+        ;文件说明：用户程序
+        ;创建日期：2011-11-15 19:11
 
 ;===============================================================================
 SECTION header vstart=0
 
         program_length dd program_end ; 程序总长度 #0x00
-
-        head_len dd header_end ; 程序头部的长度 #0x04
+        head_len       dd header_end  ; 程序头部的长度 #0x04
 
         stack_seg dd 0 ; 用于接收堆栈段选择子 #0x08
-        stack_len dd 1 ; 程序建议的堆栈大小 #0x0c, 以 4KB 为单位
+        stack_len dd 1 ; 程序建议的堆栈大小(以 4KB 为单位) #0x0c
 
         prgentry dd start              ; 程序入口 #0x10
         code_seg dd section.code.start ; 代码段位置 #0x14
@@ -16,7 +18,6 @@ SECTION header vstart=0
 
         data_seg dd section.data.start ; 数据段位置 #0x1c
         data_len dd data_end           ; 数据段长度 #0x20
-
 ;-------------------------------------------------------------------------------
         ; 符号地址检索表
         salt_items dd (header_end-salt)/256 ; #0x24
@@ -26,61 +27,53 @@ SECTION header vstart=0
                     times 256-($-PrintString) db 0
 
         TerminateProgram db '@TerminateProgram'
-                    times 256-($-TerminateProgram) db 0
+                         times 256-($-TerminateProgram) db 0
 
         ReadDiskData db '@ReadDiskData'
-                    times 256-($-ReadDiskData) db 0
+                     times 256-($-ReadDiskData) db 0
 
 header_end:
 
 ;===============================================================================
 SECTION data vstart=0
 
-        ; 缓冲区
-        buffer times 1024 db  0
+        message_1 db 0x0d, 0x0a
+                  db '[USER TASK]: Hi! nice to meet you,'
+                  db 'I am run at CPL=', 0
 
-        message_1 db 0x0d, 0x0a, 0x0d, 0x0a
-                db '**********User program is runing**********'
-                db 0x0d, 0x0a, 0
-
-        message_2 db '  Disk data:', 0x0d, 0x0a, 0
+        message_2 db 0
+                  db '.Now,I must exit...', 0x0d, 0x0a, 0
 
 data_end:
 
 ;===============================================================================
-        [bits 32]
+      [bits 32]
 ;===============================================================================
 SECTION code vstart=0
 start:
+        ; 任务启动时, DS指向头部段, 也不需要设置堆栈
         mov eax, ds
         mov fs,  eax
-
-        mov eax, [stack_seg]
-        mov ss,  eax
-        mov esp, 0
 
         mov eax, [data_seg]
         mov ds,  eax
 
         mov  ebx, message_1
-        call far [fs:PrintString]
+        call far [fs:PrintString] ; 调用门调用
 
-        mov  eax, 100              ;逻辑扇区号100
-        mov  ebx, buffer           ;缓冲区偏移地址
-        call far [fs:ReadDiskData] ;段间调用
+        mov ax,          cs
+        and al,          0000_0011B
+        or  al,          0x0030
+        mov [message_2], al
 
         mov  ebx, message_2
         call far [fs:PrintString]
 
-        mov  ebx, buffer
-        call far [fs:PrintString] ; too
-
-        ; 将控制权返回到系统
-        jmp far [fs:TerminateProgram]
+        call far [fs:TerminateProgram] ; 退出, 并将控制权返回到核心
 
 code_end:
 
-;===============================================================================
+;-------------------------------------------------------------------------------
 SECTION trail
 ;-------------------------------------------------------------------------------
 program_end:
