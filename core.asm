@@ -428,11 +428,14 @@ terminate_current_task:
         mov eax, core_data_seg_sel
         mov ds,  eax
 
+        ; 这里能从用户程序(3级别)跳转到进程管理器(0级别)的的原因是, 用户程序已经通过调用门调起了此处的
+        ; 内核代码(也就是 terminate_current_task), 因此在这一行 CPL=0, 自然也允许跳转
+        ; ---------------------------------------------------------------------------------
         test dx,  0100_0000_0000_0000B      ; 测试NT位. NT 置位 `dx & OP ! = 0`, 也就是嵌套了
         jnz  .b1                            ; 当前任务是嵌套的，到.b1执行iretd
-        mov  ebx, core_msg1                 ; 当前任务不是嵌套的，直接切换到
+        mov  ebx, core_msg1                 ; 当前任务不是嵌套的，直接切换到程序管理器任务
         call sys_routine_seg_sel:put_string
-        jmp  far [prgman_tss]               ; 程序管理器任务
+        jmp  far [prgman_tss]
 
    .b1:
         mov  ebx, core_msg0
