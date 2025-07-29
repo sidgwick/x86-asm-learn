@@ -15,18 +15,14 @@
         ;以下是系统核心的头部，用于加载核心程序
         core_length dd core_end ;核心程序总长度#00
 
-        sys_routine_seg dd section.sys_routine.start
-                                           ;系统公用例程段位置#04
+        sys_routine_seg dd section.sys_routine.start ;系统公用例程段位置#04
+        core_data_seg   dd section.core_data.start   ;核心数据段位置#08
+        core_code_seg   dd section.core_code.start   ;核心代码段位置#0c
 
-        core_data_seg dd section.core_data.start
-                                           ;核心数据段位置#08
-
-        core_code_seg dd section.core_code.start
-                                           ;核心代码段位置#0c
-
-
-        core_entry dd start ;核心代码段入口点#10
-                         dw core_code_seg_sel
+        ;核心代码段入口点#10
+        ; [32 bits] + [16 bits]
+        core_entry dd start
+                   dw core_code_seg_sel
 
 ;===============================================================================
         [bits 32]
@@ -244,6 +240,7 @@ set_up_gdt_descriptor: ;在GDT内安装一个新的描述符
         mov ebx, core_data_seg_sel ;切换到核心数据段
         mov ds,  ebx
 
+        ; GDT 存放的是 `[16-bits 界限] + [32 bits 基址]`
         sgdt [pgdt] ;以便开始处理GDT
 
         mov ebx, mem_0_4_gb_seg_sel
@@ -276,11 +273,12 @@ set_up_gdt_descriptor: ;在GDT内安装一个新的描述符
 
         retf
 ;-------------------------------------------------------------------------------
+; BBRL_RRBB
+; BBBB_LLLL
 make_seg_descriptor: ;构造存储器和系统的段描述符
                                            ;输入：EAX=线性基地址
                                            ;      EBX=段界限
-                                           ;      ECX=属性。各属性位都在原始
-                                           ;          位置，无关的位清零
+                                           ;      ECX=属性。各属性位都在原始位置，无关的位清零
                                            ;返回：EDX:EAX=描述符
         mov edx, eax
         shl eax, 16
@@ -290,7 +288,7 @@ make_seg_descriptor: ;构造存储器和系统的段描述符
         rol   edx, 8
         bswap edx             ;装配基址的31~24和23~16  (80486+)
 
-        xor bx,  bx
+        xor bx,  bx  ; 清除 EBX 的低 16 位
         or  edx, ebx ;装配段界限的高4位
 
         or edx, ecx ;装配属性
@@ -298,11 +296,12 @@ make_seg_descriptor: ;构造存储器和系统的段描述符
         retf
 
 ;-------------------------------------------------------------------------------
+; OOOO_RRAA, RR=p_dpl_0_1100, AA=000_(ARGS_NUM)
+; SSSS_OOOO
 make_gate_descriptor: ;构造门的描述符（调用门等）
                                            ;输入：EAX=门代码在段内偏移地址
                                            ;       BX=门代码所在段的选择子
-                                           ;       CX=段类型及属性等（各属
-                                           ;          性位都在原始位置）
+                                           ;       CX=段类型及属性等（各属性位都在原始位置）
                                            ;返回：EDX:EAX=完整的描述符
         push ebx
         push ecx
