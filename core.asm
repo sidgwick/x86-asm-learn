@@ -333,6 +333,8 @@ allocate_a_4k_page: ;分配一个4KB的页
 
         xor eax, eax
   .b1:
+        ; bts 测试目的操作数的第 `源操作数` 位, 将改位置 1, 并将原始的位值传递到 CF
+        ; jnc .b2 说明找到了第 eax 个空闲页面
         bts [page_bit_map], eax
         jnc .b2
         inc eax
@@ -365,14 +367,21 @@ alloc_inst_a_page: ;分配一个页，并安装在当前活动的
         mov eax, mem_0_4_gb_seg_sel
         mov ds,  eax
 
+        ; 为了检查这个页表是否存在, 首先要能访问页目录.
+        ; 因为我们在页目录的第 1023 个条目(也就是最后一个), 设置了指向页目录本身的物理地址
+        ; 因此页目录自己可以使用使用虚拟地址 0xFFFFF000 访问
+
         ;检查该线性地址所对应的页表是否存在
-        mov esi, ebx
-        and esi, 0xffc00000
-        shr esi, 20         ;得到页目录索引，并乘以4
-        or  esi, 0xfffff000 ;页目录自身的线性地址+表内偏移
+        mov esi, ebx        ; 将页的线性地址传递到 esi
+        and esi, 0xffc00000 ; ESI 留下目录表里面的索引值(高 10 位)
+        shr esi, 22 - 2     ; 得到页目录索引, 并乘以4 (右移 22 位, 再左移 2 位)
+        or  esi, 0xfffff000 ; 页目录自身的线性地址+表内偏移, `OR操作 等于 +`
 
         test dword [esi], 0x00000001 ;P位是否为“1”。检查该线性地址是
         jnz  .b1                     ;否已经有对应的页表
+
+        ; jnz 表示 [esi] 的 P 位是 1, 也就是对应的页面已经存在了
+        ; 否则就需要位页面申请内存空间
 
         ;创建该线性地址所对应的页表
         call allocate_a_4k_page ;分配一个页做为页表
@@ -391,7 +400,7 @@ alloc_inst_a_page: ;分配一个页，并安装在当前活动的
         shr  ebx,   10          ;相当于右移12位，再乘以4
         or   esi,   ebx         ;页表项的线性地址
         call allocate_a_4k_page ;分配一个页，这才是要安装的页
-        or   eax,   0x00000007
+        or   eax,   0x00000007  ; P=1, RW=1, US=1
         mov  [esi], eax
 
         pop ds
@@ -416,16 +425,27 @@ create_copy_cur_pdir: ;创建新页目录，并复制当前页目录内容
         mov ds,  ebx
         mov es,  ebx
 
+        ; 分配一个 4K 页面, 作为新的页目录使用
         call allocate_a_4k_page
         mov  ebx,          eax
-        or   ebx,          0x00000007
+        or   ebx,          0x00000007 ; 设置页面的属性, P=1, RW=1, US=1
+        ; 注意此处设置的是原来的页目录, 而不是最新分配的这个
+        ; 倒数第一项已经被设置为是页目录自己的地址, 这里设置倒数第二项设置为当前页面的物理地址
         mov  [0xfffffff8], ebx
 
+        ; 注意看新页目录的操作方法, 使用的是 0xFFFFE000 作为它的线性地址
+        ; 第一级索引 0x3FF, 第二级索引 0x3FE, 刚好命中刚刚设置的倒数第二项
         mov esi, 0xfffff000 ;ESI->当前页目录的线性地址
         mov edi, 0xffffe000 ;EDI->新页目录的线性地址
         mov ecx, 1024       ;ECX=要复制的目录项数
+
+        ; movsd ==> moves the byte, word, double-word
         cld
         repe movsd
+
+        ; 到这里新页目录导数第一项索引并没有指向这个最新的页面
+        ; 因此不能使用 0xFFFFF000 来访问页目录.
+        ; 倒是倒数第二项现在是指向页目录自己的, 能通过 0xFFFFE 来访问
 
         pop ecx
         pop ebx
@@ -461,14 +481,15 @@ SECTION core_data vstart=0 ;系统核心的数据段
         pgdt dw 0 ;用于设置和修改GDT
                          dd 0
 
+        ; 这些页面一共是 8*8*8 共计 512 个页面, 也就是 2G 的内存
         page_bit_map db 0xff,0xff,0xff,0xff,0xff,0x55,0x55,0xff
-                         db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
-                         db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
-                         db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
-                         db 0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55
-                         db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-                         db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-                         db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+                     db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
+                     db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
+                     db 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
+                     db 0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55
+                     db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+                     db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+                     db 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
         page_map_len equ $-page_bit_map
 
         ;符号地址检索表
@@ -581,11 +602,12 @@ load_relocate_program: ;加载并重定位用户程序
                                            ;输入: PUSH 逻辑扇区号
                                            ;      PUSH 任务控制块基地址
                                            ;输出：无
-        pushad
+        pushad ; --- ACDB, SP, BP, SI, DI
 
         push ds
         push es
 
+        ; 函数序言, BP 已经由 pushad 入栈了, 因此这里可以直接覆盖掉
         mov ebp, esp ;为访问通过堆栈传递的参数做准备
 
         mov ecx, mem_0_4_gb_seg_sel
@@ -595,6 +617,8 @@ load_relocate_program: ;加载并重定位用户程序
         mov ebx, 0xfffff000
         xor esi, esi
   .b1:
+        ; movl 0x00000000, %es:(%ebx, %esi, 4)
+        ; 每个页目录条目式 4 字节, 总共要清理 512 次
         mov dword [es:ebx+esi*4], 0x00000000
         inc esi
         cmp esi,                  512
@@ -604,6 +628,8 @@ load_relocate_program: ;加载并重定位用户程序
         mov eax, core_data_seg_sel
         mov ds,  eax               ;切换DS到内核数据段
 
+        ; ES, DS, DI, SI, SP, BP, BX, DX, CX, AX, IP, TCB, SECTOR
+        ; 0.  1.  2.  3.  4.  5.  6.  7.  8.  9.  10. 11.  12
         mov  eax, [ebp+12*4]                      ;从堆栈中取出用户程序起始扇区号
         mov  ebx, core_buf                        ;读取程序头部数据
         call sys_routine_seg_sel:read_hard_disk_0
@@ -616,6 +642,10 @@ load_relocate_program: ;加载并重定位用户程序
         test   eax, 0x00000fff ;程序的大小正好是4KB的倍数吗?
         cmovnz eax, ebx        ;不是。使用凑整的结果
 
+        ; `eax & 0x00000FFF = 非 0`, 说明 eax 里面原来低 12 位非 0, 也就是没有 4Kb 对齐
+        ; test 使用 & 操作 -- 适用于判断状态位, 0 值等
+        ; cmp 使用减法操作 -- 适用于比较大小
+
         mov ecx, eax
         shr ecx, 12  ;程序占用的总4KB页数
 
@@ -626,14 +656,15 @@ load_relocate_program: ;加载并重定位用户程序
         mov esi, [ebp+11*4] ;从堆栈中取得TCB的基地址
   .b2:
         mov  ebx,                 [es:esi+0x06]    ;取得可用的线性地址
-        add  dword [es:esi+0x06], 0x1000
+        add  dword [es:esi+0x06], 0x1000           ; 可用地址指向下一个 4096 位置
         call sys_routine_seg_sel:alloc_inst_a_page
 
+        ; 读 8 次硬盘, 将页面读满
         push ecx
         mov  ecx, 8
   .b3:
         call sys_routine_seg_sel:read_hard_disk_0
-        inc  eax
+        inc  eax                                  ; 扇区号
         loop .b3
 
         pop  ecx
@@ -643,6 +674,7 @@ load_relocate_program: ;加载并重定位用户程序
         mov eax, core_data_seg_sel ;切换DS到内核数据段
         mov ds,  eax
 
+        ; 为了处理这个 TSS, 直接分配了一个 4Kb 的页面, 是不是有点浪费?
         mov  ebx,                     [core_next_laddr] ;用户任务的TSS必须在全局空间上分配
         call sys_routine_seg_sel:alloc_inst_a_page
         add  dword [core_next_laddr], 4096
@@ -650,19 +682,24 @@ load_relocate_program: ;加载并重定位用户程序
         mov [es:esi+0x14],      ebx ;在TCB中填写TSS的线性地址
         mov word [es:esi+0x12], 103 ;在TCB中填写TSS的界限值
 
+        ; 注意看下面只管任务自己的线性空间还有哪些没用的地址, 不管物理空间
+        ; 因为线性空间在任务之间, 是相互隔离的
+
         ;在用户任务的局部地址空间内创建LDT
         mov  ebx,                 [es:esi+0x06]    ;从TCB中取得可用的线性地址
         add  dword [es:esi+0x06], 0x1000
         call sys_routine_seg_sel:alloc_inst_a_page
         mov  [es:esi+0x0c],       ebx              ;填写LDT线性地址到TCB中
 
+        ; 在平坦模型下, 所有的段开始位置都是从 0 开始的, 段限长直接干到线性地址上限
+
         ;建立程序代码段描述符
         mov  eax, 0x00000000
         mov  ebx, 0x000fffff
-        mov  ecx, 0x00c0f800                         ;4KB粒度的代码段描述符，特权级3
+        mov  ecx, 0x00c0f800                         ;4KB粒度的代码段描述符，特权级3, g_db_l_avl = 1100, p_dpl_s_type = 1111_1000
         call sys_routine_seg_sel:make_seg_descriptor
         mov  ebx, esi                                ;TCB的基地址
-        call fill_descriptor_in_ldt
+        call fill_descriptor_in_ldt                  ; 将代码段追加到 ldt 里面来
         or   cx,  0000_0000_0000_0011B               ;设置选择子的特权级为3
 
         mov ebx,         [es:esi+0x14] ;从TCB中获取TSS的线性地址
@@ -677,6 +714,7 @@ load_relocate_program: ;加载并重定位用户程序
         call fill_descriptor_in_ldt
         or   cx,  0000_0000_0000_0011B               ;设置选择子的特权级为3
 
+        ; DS, ES, FS, GS 都写成数据段
         mov ebx,         [es:esi+0x14] ;从TCB中获取TSS的线性地址
         mov [es:ebx+84], cx            ;填写TSS的DS域
         mov [es:ebx+72], cx            ;填写TSS的ES域
@@ -684,6 +722,12 @@ load_relocate_program: ;加载并重定位用户程序
         mov [es:ebx+92], cx            ;填写TSS的GS域
 
         ;将数据段作为用户任务的3特权级固有堆栈
+        ; --------------------------------------
+        ; 这里似乎是用了一段向上生长的内存当做堆栈使用:
+        ;   把 SS 设置为 DS, 把 SP 设置为当前内存最高端
+        ;   当 push 的时候, SP 先减再用, 放置的数据就是在内存高位, 此后一直往低位方向生长
+        ;   这里 stack 没有设置大小限制, 这里虽然分配了 4Kb 内存作为栈使用
+        ;   但是栈操作的时候不能约束在这 4Kb 里面, 整个数据段都可以当做栈使用. 比较危险
         mov  ebx,                 [es:esi+0x06]    ;从TCB中取得可用的线性地址
         add  dword [es:esi+0x06], 0x1000
         call sys_routine_seg_sel:alloc_inst_a_page
@@ -700,7 +744,7 @@ load_relocate_program: ;加载并重定位用户程序
 
         mov  eax, 0x00000000
         mov  ebx, 0x000fffff
-        mov  ecx, 0x00c09200                         ;4KB粒度的堆栈段描述符，特权级0
+        mov  ecx, 0x00c09200                         ;4KB粒度的堆栈段描述符，特权级0, g_db_l_val = 1100, p_dpl_s_type(X_C/E_R/W_A) = 1001_0010
         call sys_routine_seg_sel:make_seg_descriptor
         mov  ebx, esi                                ;TCB的基地址
         call fill_descriptor_in_ldt
@@ -757,12 +801,15 @@ load_relocate_program: ;加载并重定位用户程序
 
         cld
 
+        ; 这里我们已经把程序加载在线性地址 0 开始的位置, 因此 es:0x0c 就能访问用户到头部的数据
+        ; 外圈循环 - 由用户程序的 SALT 条目数决定循环次数
         mov ecx, [es:0x0c] ;U-SALT条目数
         mov edi, [es:0x08] ;U-SALT在4GB空间内的偏移
   .b4:
         push ecx
         push edi
 
+        ; 内圈循环, 遍历系统提供的符号表
         mov ecx, salt_items
         mov esi, salt
   .b5:
@@ -796,7 +843,7 @@ load_relocate_program: ;加载并重定位用户程序
         mov   esi,           [ebp+11*4]                 ;从堆栈中取得TCB的基地址
         mov   eax,           [es:esi+0x0c]              ;LDT的起始线性地址
         movzx ebx,           word [es:esi+0x0a]         ;LDT段界限
-        mov   ecx,           0x00408200                 ;LDT描述符，特权级0
+        mov   ecx,           0x00408200                 ;LDT描述符，特权级0 => g-db-l-val=0100, p-dpl-s=1000, TYPE=0010~LDT
         call  sys_routine_seg_sel:make_seg_descriptor
         call  sys_routine_seg_sel:set_up_gdt_descriptor
         mov   [es:esi+0x10], cx                         ;登记LDT选择子到TCB中
@@ -807,7 +854,7 @@ load_relocate_program: ;加载并重定位用户程序
         mov word [es:ebx+0], 0 ;反向链=0
 
         mov dx,           [es:esi+0x12] ;段长度（界限）
-        mov [es:ebx+102], dx            ;填写TSS的I/O位图偏移域
+        mov [es:ebx+102], dx            ;填写TSS的I/O位图偏移域 --- 写成 TSS 自己的长度即可
 
         mov word [es:ebx+100], 0 ;T=0
 
@@ -821,7 +868,7 @@ load_relocate_program: ;加载并重定位用户程序
         ;在GDT中登记TSS描述符
         mov   eax,           [es:esi+0x14]              ;从TCB中获取TSS的起始线性地址
         movzx ebx,           word [es:esi+0x12]         ;段长度（界限）
-        mov   ecx,           0x00408900                 ;TSS描述符，特权级0
+        mov   ecx,           0x00408900                 ;TSS描述符，特权级0 - 0100, 1000, 1001
         call  sys_routine_seg_sel:make_seg_descriptor
         call  sys_routine_seg_sel:set_up_gdt_descriptor
         mov   [es:esi+0x18], cx                         ;登记TSS选择子到TCB
@@ -965,6 +1012,8 @@ start:
         mov cr0, eax        ;开启分页机制
 
         ;在页目录内创建与线性地址0x80000000对应的目录项
+        ; 主要是切换分页之后, 地址映射是基于分页做的, 一旦选择子里面的基地址修改为 0x8...
+        ; 此后内存访问都是访问 0x8.... 地址, 需要在对应的目录项有条目才能正常翻译
         mov ebx,                0xfffff000 ;页目录自己的线性地址
         mov esi,                0x80000000 ;映射的起始地址
         shr esi,                22         ;线性地址的高10位是目录索引
@@ -977,6 +1026,8 @@ start:
 
         mov ebx, [pgdt+2]
 
+        ; #0 保留, #1 4GB 段, 因此从 #2 描述符开始改
+        ; 0x10 是 #2 描述符的偏移量, 再加上 4 字节低位不操作, 因此是 0x10+4
         or dword [es:ebx+0x10+4], 0x80000000
         or dword [es:ebx+0x18+4], 0x80000000
         or dword [es:ebx+0x20+4], 0x80000000
@@ -1001,6 +1052,8 @@ start:
         call sys_routine_seg_sel:put_string
 
         ;以下开始安装为整个系统服务的调用门。特权级之间的控制转移必须使用门
+        ; OOOO_ABCD A=p_dpl_s0, type=1100, CD=000_(ARGS_CNT)
+        ; SSSS_OOOO ----
         mov edi, salt       ;C-SALT表的起始位置
         mov ecx, salt_items ;C-SALT表的条目数量
   .b4:
