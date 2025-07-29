@@ -18,11 +18,10 @@
 
         TerminateProgram db '@TerminateProgram'
                     times 256-($-TerminateProgram) db 0
-;-------------------------------------------------------------------------------
 
         reserved times 256*500 db 0 ;保留一个空白区，以演示分页
 
-;-------------------------------------------------------------------------------
+
         ReadDiskData db '@ReadDiskData'
                     times 256-($-ReadDiskData) db 0
 
@@ -32,8 +31,8 @@
         salt_end:
 
         message_0 db 0x0d,0x0a,
-                         db '  ............User task is running with '
-                         db 'paging enabled!............',0x0d,0x0a,0
+                  db '  ............User task is running with '
+                  db 'paging enabled!............',0x0d,0x0a,0
 
         space db 0x20,0x20,0
 
@@ -42,13 +41,12 @@
 ;-------------------------------------------------------------------------------
 
 start:
-
         mov  ebx, message_0
-        call far [PrintString]
+        call far [PrintString] ; 平坦模型下, 所有的段都是从 0 开始的
 
         xor esi, esi
         mov ecx, 88
-  .b1:
+    .b1:
         mov  ebx, space
         call far [PrintString]
 
