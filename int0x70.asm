@@ -9,10 +9,10 @@ SECTION header vstart=0                     ;定义用户程序头部段
 
     ;用户程序入口点
     code_entry      dw start                ;偏移地址[0x04]
-                   dd section.code.start   ;段地址[0x06]
+                  dd section.code.start   ;段地址[0x06]
 
     realloc_tbl_len dw (header_end-realloc_begin)/4
-                                           ;段重定位表项个数[0x0a]
+                                          ;段重定位表项个数[0x0a]
 
     realloc_begin:
     ;段重定位表
@@ -38,7 +38,7 @@ new_int_0x70:
       in al,0x71                         ;读寄存器A
       test al,0x80                       ;测试第7位UIP
       jnz .w0                            ;以上代码对于更新周期结束中断来说
-                                        ;是不必要的
+                                       ;是不必要的
       xor al,al
       or al,0x80
       out 0x70,al
@@ -60,7 +60,7 @@ new_int_0x70:
       mov al,0x0c                        ;寄存器C的索引。且开放NMI
       out 0x70,al
       in al,0x71                         ;读一下RTC的寄存器C，否则只发生一次中断
-                                        ;此处不考虑闹钟和周期性中断的情况
+                                       ;此处不考虑闹钟和周期性中断的情况
       mov ax,0xb800
       mov es,ax
 
@@ -103,8 +103,8 @@ new_int_0x70:
 
 ;-------------------------------------------------------------------------------
 bcd_to_ascii:                            ;BCD码转ASCII
-                                        ;输入：AL=bcd码
-                                        ;输出：AX=ascii
+                                       ;输入：AL=bcd码
+                                       ;输出：AX=ascii
       mov ah,al                          ;分拆成两个数字
       and al,0x0f                        ;仅保留低4位
       add al,0x30                        ;转换成ASCII
@@ -177,7 +177,7 @@ start:
 
 ;-------------------------------------------------------------------------------
 put_string:                              ;显示串(0结尾)。
-                                        ;输入：DS:BX=串地址
+                                       ;输入：DS:BX=串地址
         mov cl,[bx]
         or cl,cl                        ;cl=0 ?
         jz .exit                        ;是的，返回主程序
@@ -185,12 +185,12 @@ put_string:                              ;显示串(0结尾)。
         inc bx                          ;下一个字符
         jmp put_string
 
-   .exit:
+    .exit:
         ret
 
 ;-------------------------------------------------------------------------------
 put_char:                                ;显示一个字符
-                                        ;输入：cl=字符ascii
+                                       ;输入：cl=字符ascii
         push ax
         push bx
         push cx
@@ -296,7 +296,7 @@ SECTION data align=16 vstart=0
 ;===============================================================================
 SECTION stack align=16 vstart=0
 
-                resb 256
+               resb 256
 ss_pointer:
 
 ;===============================================================================

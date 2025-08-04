@@ -1,229 +1,192 @@
-; 第 13 章
-; 硬盘主引导扇区代码
+        ;代码清单17-1
+        ;文件名：c17_mbr.asm
+        ;文件说明：硬盘主引导扇区代码
+        ;创建日期：2012-07-13 11:20        ;设置堆栈段和栈指针
 
+        core_base_address equ 0x00040000   ;常数，内核加载的起始内存地址
+        core_start_sector equ 0x00000001   ;常数，内核的起始逻辑扇区号
 
-; 下面这两个宏定义用来生成描述符
-%define descriptor_h(base, _offset, g_db_l_avl, p_dpl_s_type) ( \
-    (base        & 0xFF000000) | ((base        & 0x00FF0000) >> 16)  | (_offset & 0x00F0000) | \
-    ((g_db_l_avl & 0x0F) << 20) | ((p_dpl_s_type & 0xFF) <<8) \
-)
-%define descriptor_l(base, _offset) (((base & 0xFFFF) << 16) | _offset & 0xFFFF)
+;===============================================================================
+SECTION  mbr  vstart=0x00007c00
 
-        core_base_address equ 0x00040000 ; 常数, 内核加载的起始内存地址
-        core_start_sector equ 0x00000001 ; 常数, 内核的起始逻辑扇区号
+        mov ax,cs
+        mov ss,ax
+        mov sp,0x7c00
 
-        ; 设置堆栈段和栈指针
-        mov ax, cs
-        mov ss, ax
-        mov sp, 0x7c00
+        ;计算GDT所在的逻辑段地址
+        mov eax,[cs:pgdt+0x02]             ;GDT的32位物理地址
+        xor edx,edx
+        mov ebx,16
+        div ebx                            ;分解成16位逻辑地址
 
-        ; 计算 GDT 所在的逻辑段地址
-        mov eax, [cs:pgdt+0x7c00+0x02]
-        xor edx, edx
-        mov ebx, 16
-        div ebx
+        mov ds,eax                         ;令DS指向该段以进行操作
+        mov ebx,edx                        ;段内起始偏移地址
 
-        mov ds,  eax ; DS 指向的是 GDT 所在的段
-        mov ebx, edx ; EBX 指向的是 GDT 在段内的偏移
+        ;跳过0#号描述符的槽位
+        ;创建1#描述符，保护模式下的代码段描述符
+        mov dword [ebx+0x08],0x0000ffff    ;基地址为0，界限0xFFFFF，DPL=00
+        mov dword [ebx+0x0c],0x00cf9800    ;4KB粒度，代码段描述符，向上扩展
 
-        ; 0# 空描述符
-        mov dword [ebx+0x00], 0x00000000
-        mov dword [ebx+0x04], 0x00000000
+        ;创建2#描述符，保护模式下的数据段和堆栈段描述符
+        mov dword [ebx+0x10],0x0000ffff    ;基地址为0，界限0xFFFFF，DPL=00
+        mov dword [ebx+0x14],0x00cf9200    ;4KB粒度，数据段描述符，向上扩展
 
-        ; 1# 描述符, 数据段, 0~4GB, 可读写, 4KB 粒度
-        mov dword [ebx+0x08], descriptor_l(0x0, 0xFFFFF)
-        mov dword [ebx+0x0C], descriptor_h(0x0, 0xFFFFF, 1100B, 1001_0010B)
+        ;初始化描述符表寄存器GDTR
+        mov word [cs: pgdt],23             ;描述符表的界限
 
-        ; 2# 描述符, MBR 代码段, 只读
-        mov dword [ebx+0x10], descriptor_l(0x7c00, 0x1ff)
-        mov dword [ebx+0x14], descriptor_h(0x7c00, 0x1ff, 0100B, 1001_1000B)
+        lgdt [cs: pgdt]
 
-        ; 3# 描述符, 栈段, 向下生长, 读写, 4KB 粒度
-        mov dword [ebx+0x18], descriptor_l(0x7c00, 0xFFFFE)
-        mov dword [ebx+0x1C], descriptor_h(0x7c00, 0xFFFFE, 1100B, 1001_0110B)
+        in al,0x92                         ;南桥芯片内的端口
+        or al,0000_0010B
+        out 0x92,al                        ;打开A20
 
-        ; 4# 显示缓冲区 - 描述符, 数据段, 读写, 1B 粒度
-        mov dword [ebx+0x20], descriptor_l(0xb8000, 0x7FFF)
-        mov dword [ebx+0x24], descriptor_h(0xb8000, 0x7FFF, 0100B, 1001_0010B)
+        cli                                ;中断机制尚未工作
 
-        ; GDT 的长度 = (5 * 8) - 1
-        mov word [cs:pgdt+0x7c00], 39
+        mov eax,cr0
+        or eax,1
+        mov cr0,eax                        ;设置PE位
 
-        ; 初始化描述符表寄存器 GDTR
-        lgdt [cs:pgdt+0x7c00]
-
-        ; 打开 A20 地址线
-        in  al,   0x92
-        or  al,   0000_0010B
-        out 0x92, al
-
-        ; 中断机制尚未工作
-        cli
-
-        ; 打开 PE 标志
-        mov eax, cr0
-        or  eax, 0x1
-        mov cr0, eax
-
-        ; 进入保护模式
-        ; 0x0010 = 0001_0000 = 2# 选择子, MBR 代码段
-        jmp dword 0x0010:flush
-
+        ;以下进入保护模式... ...
+        jmp dword 0x0008:flush             ;16位的描述符选择子：32位偏移
+                                           ;清流水线并串行化处理器
         [bits 32]
+  flush:
+        mov eax,0x00010                    ;加载数据段(4GB)选择子
+        mov ds,eax
+        mov es,eax
+        mov fs,eax
+        mov gs,eax
+        mov ss,eax                         ;加载堆栈段(4GB)选择子
+        mov esp,0x7000                     ;堆栈指针
 
-    flush:
-        mov eax, 0x0008 ; 1000B, #1 选择子, 0~4GB 数据段
-        mov ds,  eax
+        ;以下加载系统核心程序
+        mov edi,core_base_address
 
-        mov eax, 0x0018 ; 1_1000B, #3 选择子, 栈段
-        mov ss,  eax
-        xor esp, esp
+        mov eax,core_start_sector
+        mov ebx,edi                        ;起始地址
+        call read_hard_disk_0              ;以下读取程序的起始部分（一个扇区）
 
-        ; 加载系统核心
-        mov  edi, core_base_address ; 内核在内存中的目的地
-        mov  eax, core_start_sector ; 内核所在扇区(起始)
-        mov  ebx, edi
-        call read_hard_disk_0       ; 从硬盘读入到内存
-
-        ; 以下判断整个 core 程序有多少个扇区
-        mov eax, [edi]
-        xor edx, edx
-        mov ecx, 512
+        ;以下判断整个程序有多大
+        mov eax,[edi]                      ;核心程序尺寸
+        xor edx,edx
+        mov ecx,512                        ;512字节每扇区
         div ecx
 
-        or  edx, edx ; 这是看一下 edx 是不是等于 0
-        jnz @1       ; 未除尽, 因此结果比实际扇区数少 1, 我们已经读取 1 扇区, 继续读取剩余的即可
-        dec eax      ; 刚好除尽, 已近读取 1 扇区, 接下来读其他扇区
+        or edx,edx
+        jnz @1                             ;未除尽，因此结果比实际扇区数少1
+        dec eax                            ;已经读了一个扇区，扇区总数减1
     @1:
-        or eax, eax ; 判断是不是读完了
-        jz setup
+        or eax,eax                         ;考虑实际长度≤512个字节的情况
+        jz pge                             ;EAX=0 ?
 
-        ; 读取剩余的扇区
-        mov ecx, eax
-        mov eax, core_start_sector
-        inc eax
+        ;读取剩余的扇区
+        mov ecx,eax                        ;32位模式下的LOOP使用ECX
+        mov eax,core_start_sector
+        inc eax                            ;从下一个逻辑扇区接着读
     @2:
         call read_hard_disk_0
-        inc  eax
-        loop @2
+        inc eax
+        loop @2                            ;循环读，直到读完整个内核
 
-    setup:
-        ; 注意此时 edi 指向的是 core 的开头
-        ; ESI 将来用来构造新 GDT
-        ; 代码段不可读, 因此不可以在代码段内寻址 pgdt, 但可以通过 4GB 的数据段来访问
-        mov esi, [pgdt+0x7c00+0x02]
+    pge:
+        ;准备打开分页机制。从此，再也不用在段之间转来转去，实在晕乎~
 
-        ; 建立公用例程段描述符
-        mov  eax, [edi+0x04]     ; 公用例程代码段起始汇编地址
-        mov  ebx, [edi+0x08]     ; 核心数据段汇编地址
-        sub  ebx, eax            ; 计算得到 `公用例程代码段` 的长度
-        dec  ebx                 ; 公用例程段界限, -1 是因为限长从 0 开始计数
-        add  eax, edi            ; 公用例程段基地址
-        mov  ecx, 0x00409800     ; 字节粒度的代码段描述符 g_db_l_avl=0100, p_dpl_s_type=1001_1000
-        call make_gdt_descriptor
+        ;创建系统内核的页目录表PDT
+        mov ebx,0x00020000                 ;页目录表PDT的物理地址
 
-        ; 5#, 安装描述符
-        mov [esi+0x28], eax
-        mov [esi+0x2c], edx
+        ;在页目录内创建指向页目录表自己的目录项
+        mov dword [ebx+4092],0x00020003
 
-        ; 建立核心数据段描述符
-        mov  eax, [edi+0x08]     ; 核心数据段起始汇编地址
-        mov  ebx, [edi+0x0c]     ; 核心代码段汇编地址
-        sub  ebx, eax
-        dec  ebx                 ; 核心数据段界限
-        add  eax, edi            ; 核心数据段基地址
-        mov  ecx, 0x00409200     ; 字节粒度的数据段描述符 g_db_l_avl=0100, p_dpl_s_type=1001_0010
-        call make_gdt_descriptor
+        mov edx,0x00021003                 ;MBR空间有限，后面尽量不使用立即数
+        ;在页目录内创建与线性地址0x00000000对应的目录项
+        mov [ebx+0x000],edx                ;写入目录项（页表的物理地址和属性）
+                                           ;此目录项仅用于过渡。
+        ;在页目录内创建与线性地址0x80000000对应的目录项
+        mov [ebx+0x800],edx                ;写入目录项（页表的物理地址和属性）
 
-        ; 6#, 安装描述符
-        mov [esi+0x30], eax
-        mov [esi+0x34], edx
+        ;创建与上面那个目录项相对应的页表，初始化页表项
+        mov ebx,0x00021000                 ;页表的物理地址
+        xor eax,eax                        ;起始页的物理地址
+        xor esi,esi
+  .b1:
+        mov edx,eax
+        or edx,0x00000003
+        mov [ebx+esi*4],edx                ;登记页的物理地址
+        add eax,0x1000                     ;下一个相邻页的物理地址
+        inc esi
+        cmp esi,256                        ;仅低端1MB内存对应的页才是有效的
+        jl .b1
 
-        ; 建立核心代码段描述符
-        mov  eax, [edi+0x0c]     ; 核心代码段起始汇编地址
-        mov  ebx, [edi+0x00]     ; 程序总长度
-        sub  ebx, eax
-        dec  ebx                 ; 核心代码段界限
-        add  eax, edi            ; 核心代码段基地址
-        mov  ecx, 0x00409800     ; 字节粒度的代码段描述符 g_db_l_avl=0100, p_dpl_s_type=1001_1000
-        call make_gdt_descriptor
+        ;令CR3寄存器指向页目录，并正式开启页功能
+        mov eax,0x00020000                 ;PCD=PWT=0
+        mov cr3,eax
 
-        ; 7#, 安装描述符
-        mov [esi+0x38], eax
-        mov [esi+0x3c], edx
+        ;将GDT的线性地址映射到从0x80000000开始的相同位置
+        sgdt [pgdt]
+        mov ebx,[pgdt+2]
+        add dword [pgdt+2],0x80000000      ;GDTR也用的是线性地址
+        lgdt [pgdt]
 
-        ; 描述符表的界限 = 8*8 - 1
-        mov word [pgdt+0x7c00], 63
+        mov eax,cr0
+        or eax,0x80000000
+        mov cr0,eax                        ;开启分页机制
 
-        lgdt [pgdt+0x7c00]
+        ;将堆栈映射到高端，这是非常容易被忽略的一件事。应当把内核的所有东西
+        ;都移到高端，否则，一定会和正在加载的用户任务局部空间里的内容冲突，
+        ;而且很难想到问题会出在这里。
+        add esp,0x80000000
 
-        jmp far [edi+0x10]
+        jmp [0x80040004]
 
-
-; -------------------------------------------------------------------------------
-; 从硬盘读取一个逻辑扇区
-;     EAX = 逻辑扇区号
-;     DS:EBX = 目标缓冲区地址
-;     返回 ==> EBX = EBX+512
-read_hard_disk_0:
+;-------------------------------------------------------------------------------
+read_hard_disk_0:                           ;从硬盘读取一个逻辑扇区
+                                           ;EAX=逻辑扇区号
+                                           ;DS:EBX=目标缓冲区地址
+                                           ;返回：EBX=EBX+512
         push eax
         push ecx
         push edx
 
-        ; 扇区数量需要用 eax 寄存器, 因此要先保存一下
         push eax
 
-        ; 0x1f2, 读取的扇区数
-        mov dx, 0x1f2
-        mov al, 1
-        out dx, al
+        mov dx,0x1f2
+        mov al,1
+        out dx,al                          ;读取的扇区数
 
+        inc dx                             ;0x1f3
         pop eax
+        out dx,al                          ;LBA地址7~0
 
-        ; 0x1f3 端口写 LBA 7~0 位
-        inc dx
-        out dx, al
+        inc dx                             ;0x1f4
+        mov cl,8
+        shr eax,cl
+        out dx,al                          ;LBA地址15~8
 
-        mov cl, 8
+        inc dx                             ;0x1f5
+        shr eax,cl
+        out dx,al                          ;LBA地址23~16
 
-        ; 0x1f4 端口写 LBA 15~8 位
-        inc dx
-        shr eax, cl
-        out dx,  al
+        inc dx                             ;0x1f6
+        shr eax,cl
+        or al,0xe0                         ;第一硬盘  LBA地址27~24
+        out dx,al
 
-        ; 0x1f5 端口写 LBA 23~16 位
-        inc dx
-        shr eax, cl
-        out dx,  al
+        inc dx                             ;0x1f7
+        mov al,0x20                        ;读命令
+        out dx,al
 
-        ; 0x1f6, 指定第一硬盘 以及 LBA 地址 27~24
-        ; 0xe0 的解释: 1110_0000B, bit(4)=0/1-表示主/从硬盘, bit(6)=0/1指定 CHS/LBA 地址模式, bit(5|7) 是保留位始终为 1
-        inc dx
-        shr eax, cl
-        or  al,  0xe0
-        out dx,  al
+  .waits:
+        in al,dx
+        and al,0x88
+        cmp al,0x08
+        jnz .waits                         ;不忙，且硬盘已准备好数据传输
 
-        ; 0x1f7
-        ;    1. 发送 0x20 表示开始读取硬盘数据
-        ;    2. 直接读取 0x1f7 端口可以获取到硬盘的状态信息
-        inc dx
-        mov al, 0x20
-        out dx, al
-
-        ; 接下来等待读取完成
-    .waits:
-        in  al, dx
-        and al, 0x88 ; 1000_1000B, bit(3)=1 表示硬盘已经准备好和内存交换数据, bit(7)=1 表示硬盘忙
-        cmp al, 0x08
-        jnz .waits   ; 不忙(bit7), 且硬盘已准备好数据传输(bit3)
-
-        ; 0x1f0 端口, 正式读取硬盘数据
-        mov dx,  0x1f0
-        mov ecx, 256   ; 准备读取 256 字节
-    .readw:
-        in   ax,    dx
-        mov  [ebx], ax
-        add  ebx,   2
+        mov ecx,256                        ;总共要读取的字数
+        mov dx,0x1f0
+  .readw:
+        in ax,dx
+        mov [ebx],ax
+        add ebx,2
         loop .readw
 
         pop edx
@@ -233,36 +196,8 @@ read_hard_disk_0:
         ret
 
 ;-------------------------------------------------------------------------------
-; 构造描述符
-;    输入: EAX=线性基地址
-;          EBX=段界限
-;          ECX=属性(各属性位都在原始位置，其它没用到的位置0)
-;    返回: EDX:EAX=完整的描述符
-make_gdt_descriptor:
-        ; lower = LLLL_BBBB
-        mov edx, eax
-        shl eax, 16
-        or  ax,  bx
-
-        ; 下面组装高字节, high = BBPL_PPBB
-
-        ; 这里装配段基址
-        and   edx, 0xFFFF0000
-        rol   edx, 8          ; 循环左移位, 变成了 BB0000bb
-        bswap edx             ; 交换字节顺序 bb0000BB
-
-        ; 装配段界限的高4位
-        xor bx,  bx
-        or  edx, ebx
-
-        ; 装配段属性
-        or edx, ecx
-
-        ret
-
+        pgdt             dw 0
+                         dd 0x00008000     ;GDT的物理/线性地址
 ;-------------------------------------------------------------------------------
-        pgdt dw 0
-             dd 0x00007e00 ; GDT 的物理地址
-;-------------------------------------------------------------------------------
-         times 510-($-$$) db 0
-                          db 0x55,0xaa
+        times 510-($-$$) db 0
+                         db 0x55,0xaa
