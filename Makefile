@@ -1,5 +1,9 @@
 .PHONY: clean
 
+AS = as --32
+LD = ld -m elf_i386
+
+
 all:
 	dd if=/dev/zero of=a.img bs=512 count=2880
 
@@ -23,11 +27,21 @@ learn:
 	ndisasm -b 16 boot > a.txt
 	ndisasm -b 16 boot1 > b.txt
 
-boot:
-	-rm boot.o boot.bin
-	as --32 -o boot.o boot.s
-	ld -m elf_i386 -z noexecstack --oformat=binary --Ttext=0x7c00 -o boot.bin boot.o
-	objdump -D -b binary -mi386 -Maddr16,data16 boot.bin
+rewrite:
+	-rm core.o core.bin a b core0.bin
+
+	$(AS) -o core.o core.s
+	$(LD) -z noexecstack --oformat=binary --Ttext=0x80040000 -o core.bin core.o
+
+	nasm -f bin -o core0.bin core0.asm
+
+	# objdump -D -b binary -mi386 -Maddr16,data16 core.bin
+
+	objdump -D -b binary -mi386 -Maddr32,data32 core0.bin | cut -d: -f2- > a
+	objdump -D -b binary -mi386 -Maddr32,data32 core.bin | cut -d: -f2- > b
+
+	diff --color -u a b
+	echo $?
 
 clean:
 	rm a.img *.bin *.lst
