@@ -4,12 +4,12 @@
 all: exit power
 
 exit: exit.s
-	as -o exit.o $^
-	ld -o $@ exit.o
+	as --32 -o exit.o $^
+	ld -m elf_i386 -o $@ exit.o
 
 power: power.s
-	as -o power.o $^
-	ld -o $@ power.o
+	as --32 -o power.o $^
+	ld -m elf_i386 -o $@ power.o
 
 clean:
 	rm exit power *.o
