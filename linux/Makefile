@@ -1,6 +1,6 @@
 .PHONY: clean
 
-AS = as --32
+AS = as --32 -g
 LD = ld -m elf_i386
 
 all: exit power factorial
@@ -17,5 +17,9 @@ power: power.s
 	$(AS) -o power.o $^
 	$(LD) -o $@ power.o
 
+toupper: toupper.s
+	$(AS) -o toupper.o $^
+	$(LD) -o $@ toupper.o
+
 clean:
-	rm exit power *.o
+	-rm exit power factorial toupper *.o
