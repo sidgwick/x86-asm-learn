@@ -1,15 +1,17 @@
 .PHONY: clean
 
+AS = as --32
+LD = ld -m elf_i386
 
 all: exit power
 
 exit: exit.s
-	as --32 -o exit.o $^
-	ld -m elf_i386 -o $@ exit.o
+	$(AS) -o exit.o $^
+	$(LD) -o $@ exit.o
 
 power: power.s
-	as --32 -o power.o $^
-	ld -m elf_i386 -o $@ power.o
+	$(AS) -o power.o $^
+	$(LD) -o $@ power.o
 
 clean:
 	rm exit power *.o
