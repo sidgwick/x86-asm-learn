@@ -1,9 +1,15 @@
 .PHONY: clean
 
 
-all:
-	as -o exit.o exit.s
-	ld -o exit exit.o
+all: exit power
+
+exit: exit.s
+	as -o exit.o $^
+	ld -o $@ exit.o
+
+power: power.s
+	as -o power.o $^
+	ld -o $@ power.o
 
 clean:
-	rm exit *.o
+	rm exit power *.o
