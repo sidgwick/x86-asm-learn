@@ -8,7 +8,7 @@ all: write-records read-records
 write-records: linux.o record-def.o write-records.o write-record.o
 	$(LD) -o $@ $^
 
-read-records: linux.o record-def.o read-records.o read-record.o
+read-records: linux.o record-def.o count-char.o write-newline.o read-records.o read-record.o
 	$(LD) -o $@ $^
 
 %.o: %.s

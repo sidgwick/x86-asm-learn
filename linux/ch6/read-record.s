@@ -2,9 +2,9 @@
 .include "linux.s"
 
 # 目的:此函数从文件描述符读取一条记录
-# 
+#
 # 输入:文件描述符及缓冲区
-# 
+#
 # 输出:本函数将数据写入缓冲区并返回状态码
 .equ ST_READ_BUFFER, 8
 .equ ST_FILEDES, 12
@@ -22,8 +22,9 @@ read_record:
         movl $SYS_READ, %eax
         int $LINUX_SYSCALL
 
-        #注意- %eax中含返回值,我们将该值传回调用程序
         popl %ebx
+
+        # 注意- %eax中含返回值,我们将该值传回调用程序
         movl %ebp, %esp
         popl %ebp
 

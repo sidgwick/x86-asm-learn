@@ -32,7 +32,7 @@ record2:
         .rept 32 #填充到40字节
         .byte 0
         .endr
-        
+
         .ascii "Taylor\0"
         .rept 33 #Padding to 40 bytes
         .byte 0
@@ -42,7 +42,7 @@ record2:
         .rept 203 #填充到240字节
         .byte 0
         .endr
-        
+
         .long 29
 
 record3:
@@ -50,12 +50,12 @@ record3:
         .rept 32 #填充到40字节
         .byte 0
         .endr
-        
+
         .ascii "McIntire\0"
         .rept 31 #填充到40字节
         .byte 0
         .endr
-        
+
         .ascii "500 W Oakland\nSan Diego, CA 543321/0"
         .rept 206 #填充到240字节
         .byte 0
@@ -85,7 +85,7 @@ _start:
     pushl $record1
     call write_record
     addl $8, %esp
-    
+
     # 写第二条记录
     pushl ST_FILE_DESCRIPTOR(%ebp)
     pushl $record2
