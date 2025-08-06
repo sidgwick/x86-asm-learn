@@ -30,3 +30,5 @@ keyboard: keymap=#$BXSHARE/keymaps/x11-pc-us.map
 # 内存容量
 megs: 128
 
+# 可编程中断控制器
+pci: enabled=1, chipset=i440fx

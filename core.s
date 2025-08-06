@@ -610,7 +610,7 @@ terminate_current_task:
         # EAX=链表头或当前TCB线性地址
         mov $tcb_chain, %eax
     0:
-        mov (%eax), %ebx # EBX=下一个TCB线性地址
+        mov (%eax), %ebx # EBX=(Node *) 当前循环体 TCB 的指针
         cmpw $0xffff, 0x04(%ebx) # 是忙任务（当前任务）？
         je 1f
         mov %ebx, %eax # 定位到下一个TCB（的线性地址）
@@ -730,7 +730,7 @@ fill_descriptor_in_ldt:
 
         mov %ax, %cx
         shl $3, %cx
-        or $0b0000000000000100, %cx
+        or $0b0000000000000100, %cx # TI=1~LDT
 
         pop %edi
         pop %edx
