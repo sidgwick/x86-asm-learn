@@ -9,6 +9,41 @@
 
 .section .text
 
+# 打印 string 字段
+.type print_string_field, @function
+print_string_field:
+        .equ FIELD_OFFSET, 8
+        .equ BUFFER_OFFSET, 12
+        .equ OUTPUT_FD_OFFSET, 16
+
+        push %ebp
+        mov %esp, %ebp
+
+        mov BUFFER_OFFSET(%esp), %ebx
+        add FIELD_OFFSET(%esp), %ebx
+
+        # 先找找打印长度
+        pushl %ebx
+        call count_chars
+        pop %ebx
+
+        # 打印具体内容
+        movl %eax, %edx # 长度
+        movl %ebx, %ecx # content buffer
+        movl OUTPUT_FD_OFFSET(%esp), %ebx
+        movl $SYS_WRITE, %eax
+        int $LINUX_SYSCALL
+
+        # 输出换行符
+        pushl OUTPUT_FD_OFFSET(%esp)
+        call write_newline
+        addl $4, %esp
+
+        mov %ebp, %esp
+        pop %ebp
+
+        ret
+
 #主程序
 .globl _start
 _start:
@@ -42,22 +77,21 @@ _start:
         cmpl $RECORD_SIZE, %eax
         jne finished_reading
 
-        # 否则, 打印出名, 但我们首先必须知道名的大小
-        pushl $RECORD_FIRSTNAME + record_buffer
-        call count_chars
+        # 打印信息
+        push ST_OUTPUT_DESCRIPTOR(%ebp)
+        push $record_buffer
+        push $RECORD_FIRSTNAME
+        call print_string_field
         addl $4, %esp
 
-        # 打印名称, edx 控制打印数量
-        movl %eax, %edx
-        movl ST_OUTPUT_DESCRIPTOR(%ebp), %ebx
-        movl $SYS_WRITE, %eax
-        movl $RECORD_FIRSTNAME + record_buffer, %ecx
-        int $LINUX_SYSCALL
-
-        # 输出换行符
-        pushl ST_OUTPUT_DESCRIPTOR(%ebp)
-        call write_newline
+        push $RECORD_LASTNAME
+        call print_string_field
         addl $4, %esp
+
+        push $RECORD_ADDRESS
+        call print_string_field
+        addl $4, %esp
+
         jmp record_read_loop
 
     finished_reading:

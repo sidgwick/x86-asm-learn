@@ -56,7 +56,7 @@ record3:
         .byte 0
         .endr
 
-        .ascii "500 W Oakland\nSan Diego, CA 543321/0"
+        .ascii "500 W Oakland\nSan Diego, CA 543321\0"
         .rept 206 #填充到240字节
         .byte 0
         .endr
