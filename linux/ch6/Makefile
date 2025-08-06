@@ -12,7 +12,7 @@ read-records: linux.o record-def.o count-char.o write-newline.o read-records.o r
 	$(LD) -o $@ $^
 
 
-add-year: linux.o record-def.o write-record.o read-record.o add-year.o
+add-year: linux.o record-def.o count-char.o write-newline.o error-exit.o write-record.o read-record.o add-year.o
 	$(LD) -o $@ $^
 
 %.o: %.s

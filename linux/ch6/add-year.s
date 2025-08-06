@@ -6,6 +6,10 @@
     input_file_name: .asciz "test.dat"
     output_file_name: .asciz "testout.dat"
 
+    no_open_file_code: .ascii "0001: \0"
+    no_open_file_msg: .ascii "Can't Open Input File\0"
+
+
 .section .bss
     .lcomm record_buffer, RECORD_SIZE
 
@@ -31,14 +35,25 @@ _start:
 
         # 保存输入文件描述符到内存中
         movl %eax, ST_INPUT_DESCRIPTOR(%ebp)
-        
+
+        # 下面将检测%eax是否为负值
+        # 如果是非负值,那么程序将继续处理, 否则将处理负数对应的错误情况
+        cmpl $0, %eax
+        jge continue_processing
+
+        #发送错误信息
+        pushl $no_open_file_msg
+        pushl $no_open_file_code
+        call error_exit
+
+    continue_processing:
         #打开用于写入的文件
         movl $SYS_OPEN, %eax
         movl $output_file_name, %ebx
         movl $0101, %ecx
         movl $0666, %edx
         int $LINUX_SYSCALL
-        
+
         movl %eax, ST_OUTPUT_DESCRIPTOR(%ebp)
 
     loop_begin:
@@ -51,17 +66,17 @@ _start:
         #如果字节数与我们请求的字节数不同, 说明已到达文件结束处或出现错误, 我们就要退出
         cmpl $RECORD_SIZE, %eax
         jne loop_end
-        
+
         #递增年龄
         incl record_buffer + RECORD_AGE
-        
+
         #写记录
         pushl ST_OUTPUT_DESCRIPTOR(%ebp)
         pushl $record_buffer
         call write_record
         addl $8, %esp
         jmp loop_begin
-    
+
     loop_end:
         movl $SYS_EXIT, %eax
         movl $0, %ebx
