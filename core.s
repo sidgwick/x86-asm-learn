@@ -24,7 +24,7 @@
 .section .text
 
         # 以下是系统核心的头部，用于加载核心程序
-        core_length: .long core_end       # 核心程序总长度#00
+        core_length: .long core_end - .       # 核心程序总长度#00
         core_entry: .long _start          # 核心代码段入口点#04
 
 # 字符串显示例程（适用于平坦内存模型）
@@ -1072,7 +1072,7 @@ _start:
         out %al, $0xa0 # ICW1：边沿触发/级联方式
         mov $0x70, %al
         out %al, $0xa1 # ICW2:起始中断向量
-        mov $0x04, %al
+        mov $0x02, %al
         out %al, $0xa1 # ICW3:从片级联到IR2
         mov $0x01, %al
         out %al, $0xa1 # ICW4:非总线缓冲，全嵌套，正常EOI
@@ -1196,7 +1196,7 @@ _start:
         movl $0, 0x06(%ebx) # 用户任务局部空间的分配从0开始。
         movw $0xffff, 0x0a(%ebx) # 登记LDT初始的界限到TCB中
 
-        push $100                     # 用户程序位于逻辑100扇区
+        push $55                     # 用户程序位于逻辑100扇区
         push %ebx                           # 压入任务控制块起始线性地址
         call load_relocate_program
         mov %ebx, %ecx
@@ -1205,6 +1205,11 @@ _start:
     .core:
         mov $core_msg0, %ebx
         call $flat_4gb_code_seg_sel, $put_string
+
+        mov $(1024*1024*3), %ecx
+    .sleep:
+        nop
+        loop .sleep
 
         # 这里可以编写回收已终止任务内存的代码
         jmp .core
