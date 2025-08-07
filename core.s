@@ -470,7 +470,8 @@ create_copy_cur_pdir:
         or $0x00000007, %ebx
         mov %ebx, 0xfffffff8 # 更新倒数第二个条目为这个新 PDT 的线性地址
 
-        # 刷新 TLB, TODO: ??? why 现在还没有重载 CR3=PDBR 呢?
+        # 刷新 TLB, 导数第二项是内核空间的映射
+        # create_copy_cur_pdir 在重复调用的时候, 不清空 tlb 项目, 访问到的会是上一次记录的数值
         invlpg 0xfffffff8
 
         mov $0xfffff000, %esi # ESI->当前页目录的线性地址
