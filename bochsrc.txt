@@ -6,8 +6,11 @@ display_library: sdl2
 romimage: file=$BXSHARE/BIOS-bochs-latest, options=fastboot
 vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest.bin
 
+# 处理器, 1C, 1GHz
+cpu: count=1, ips=1000000000
+
 # RTC
-clock: sync=realtime, rtc_sync=1, time0=local
+clock: sync=both, rtc_sync=1, time0=local
 
 # 硬盘启动
 boot: disk
@@ -32,3 +35,4 @@ megs: 128
 
 # 可编程中断控制器
 pci: enabled=1, chipset=i440fx
+#apic: enabled=0
