@@ -6,8 +6,8 @@ display_library: sdl2
 romimage: file=$BXSHARE/BIOS-bochs-latest, options=fastboot
 vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest.bin
 
-# 处理器, 1C, 1GHz
-cpu: count=1, ips=1000000000
+# 处理器, 1C, 1MHz
+cpu: count=1, ips=1048576
 
 # RTC
 clock: sync=both, rtc_sync=1, time0=local

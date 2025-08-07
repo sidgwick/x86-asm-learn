@@ -313,6 +313,8 @@ allocate_a_4k_page: ;分配一个4KB的页
         push ecx
         push edx
 
+        ; xchg bx, bx
+
         xor eax, eax
   .b1:
         bts [page_bit_map], eax
@@ -1059,15 +1061,20 @@ start:
         mov dword [ebx+0x06], 0      ;用户任务局部空间的分配从0开始。
         mov word [ebx+0x0a],  0xffff ;登记LDT初始的界限到TCB中
 
-        push dword 100             ;用户程序位于逻辑100扇区
+        push dword 55              ;用户程序位于逻辑100扇区
         push ebx                   ;压入任务控制块起始线性地址
         call load_relocate_program
         mov  ecx, ebx
         call append_to_tcb_link    ;将此TCB添加到TCB链中
 
-  .core:
+    .core:
         mov  ebx, core_msg0
         call flat_4gb_code_seg_sel:put_string
+
+        mov ecx, 1024*1024*3
+    .sleep:
+        nop
+        loop .sleep
 
         ;这里可以编写回收已终止任务内存的代码
 
